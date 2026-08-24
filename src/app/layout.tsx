@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import AdminShell from "@/components/AdminShell";
+import AuthGate from "@/components/AuthGate";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,7 +21,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <AdminShell>{children}</AdminShell>
+        <AuthGate>
+          <AdminShell>{children}</AdminShell>
+        </AuthGate>
       </body>
     </html>
   );

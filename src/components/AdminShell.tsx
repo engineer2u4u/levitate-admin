@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useAdminData } from "@/lib/useStore";
+import { initials } from "@/lib/format";
 import EnrolModal from "./EnrolModal";
+import { useAdminUser } from "./AuthGate";
 
 /* ------------------------------ toast ------------------------------ */
 
@@ -31,6 +33,7 @@ const TITLES: Record<string, [string, string]> = {
 
 export default function AdminShell({ children }: { children: ReactNode }) {
   const data = useAdminData();
+  const { user, signOut } = useAdminUser();
   const pathname = usePathname() ?? "/enrolments";
   const [toast, setToast] = useState<{ id: number; message: string } | null>(null);
   const [enrolOpen, setEnrolOpen] = useState<EnrolPrefill>(null);
@@ -115,10 +118,15 @@ export default function AdminShell({ children }: { children: ReactNode }) {
                   </span>
                 )}
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ font: "700 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)" }}>Parichita Kotnala</div>
-                  <div style={{ font: "500 10px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>Administrator</div>
+                  <div style={{ font: "700 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)" }}>{user?.name ?? "—"}</div>
+                  <div style={{ font: "500 10px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>{user?.email ?? ""}</div>
                 </div>
-                <div aria-hidden style={{ width: 31, height: 31, borderRadius: 8, background: "var(--grad)", color: "#fff", font: "700 11px 'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center" }}>PK</div>
+                <div aria-hidden style={{ width: 31, height: 31, borderRadius: 8, background: "var(--grad)", color: "#fff", font: "700 11px 'Plus Jakarta Sans',sans-serif", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {initials(user?.name ?? "?")}
+                </div>
+                <button type="button" onClick={() => void signOut()} className="btn btn-ghost" style={{ padding: "8px 12px", font: "700 10.5px 'Plus Jakarta Sans',sans-serif" }}>
+                  Sign out
+                </button>
               </div>
             </div>
 
