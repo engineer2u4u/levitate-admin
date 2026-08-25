@@ -7,3 +7,9 @@ next-env.d.ts
 
 # local secrets
 .env*.local
+
+# One-time bootstrap script — holds a real password in plaintext.
+supabase/seed_admin.sql
+
+# Supabase CLI cache
+supabase/.temp

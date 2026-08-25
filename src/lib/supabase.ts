@@ -18,11 +18,49 @@ export function getClient(): Promise<SupabaseClient> {
   }
   clientPromise ??= import("@supabase/supabase-js").then((m) =>
     m.createClient(URL, ANON, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        // Invite and sign-in links arrive with the session in the URL; this is
+        // what reads it and cleans the address bar.
+        detectSessionInUrl: true,
+        // Implicit, not PKCE, on purpose. PKCE keeps a verifier in the browser
+        // that requested the link, so a link opened on a phone when it was
+        // requested on a laptop would fail — which is exactly how invites get
+        // opened.
+        flowType: "implicit",
+      },
     }),
   );
   return clientPromise;
 }
+
+/**
+ * Where an emailed link should land — always this admin portal, never the
+ * learner site, even though both share one Supabase project.
+ *
+ * Set `NEXT_PUBLIC_ADMIN_URL` when the admin is served from a subfolder or
+ * behind a different hostname than the one the invite was sent from.
+ */
+export function adminUrl(path = ""): string {
+  const configured = process.env.NEXT_PUBLIC_ADMIN_URL?.trim();
+  const base = configured
+    ? configured.replace(/\/+$/, "") + "/"
+    : typeof window !== "undefined"
+      ? window.location.origin + "/"
+      : "";
+  return base + path;
+}
+
+/**
+ * The page an emailed link opens.
+ *
+ * Deliberately not `/`, which only exists to redirect: the session arrives in
+ * the URL fragment, and a redirect on arrival can drop it before the client
+ * has loaded and read it. Landing on a real page removes the race — and puts
+ * the person on the screen they wanted anyway.
+ */
+export const LANDING = "enrolments/";
 
 /* ---------------------------------------------------------------- mapping */
 

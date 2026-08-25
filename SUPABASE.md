@@ -12,11 +12,17 @@ browser, so region is the single biggest lever on how fast this feels.
 
 ## 2. Run the schema
 
-Open **SQL Editor** → paste `supabase/migrations/0001_init.sql` → **Run**.
+Open **SQL Editor** and run each file in `supabase/migrations/` in order:
 
-That creates `profiles`, `courses`, `sessions`, `enrolments`, the
-`session_occupancy` view, and the Row Level Security policies. It is written to
-be re-runnable, so running it twice is safe.
+| File | What it adds |
+|---|---|
+| `0001_init.sql` | `profiles`, `courses`, `sessions`, `enrolments`, the `session_occupancy` view, and the RLS policies |
+| `0002_admin_access.sql` | The `viewer` role and `admin_invites`; also closes a hole in `0001` that let an account write its own `role` |
+| `0003_course_media.sql` | The `course-media` storage bucket for banners, module covers and lesson images — public-read, admin-write |
+
+All three are written to be re-runnable, so running one twice is safe. Without
+`0003`, image uploads in the course editor fail with *"the course-media bucket
+is missing"*.
 
 ## 3. Wire the keys
 
@@ -36,33 +42,106 @@ repos.
 > anyone who opens the page. The anon key is safe precisely because RLS decides
 > what it can reach.
 
-## 4. Make yourself an admin
+## 4. Make the first admin
 
-Roles are not self-service — otherwise anyone signing up could grant themselves
-the catalogue. Sign up through the admin app, then run once in the SQL editor:
+The admin portal has no sign-up, and its sign-in screen takes a password and
+nothing else. Access is by invitation, and only an admin can invite — so the
+first account is made by hand, once.
+
+Open `supabase/seed_admin.sql`, set the email, password and name at the top,
+and run the whole file in the **SQL editor**. It creates the account and grants
+it `admin` in one pass, and is safe to re-run — an address that already exists
+has its password reset rather than being duplicated.
+
+That file is **gitignored**, because it holds a real password in plaintext. If
+it is missing from a fresh clone, the equivalent by hand is
+**Authentication → Users → Add user** (tick *Auto Confirm User*), then:
 
 ```sql
 update public.profiles set role = 'admin'
 where id = (select id from auth.users where email = 'you@levitatepeoplesoft.com');
 ```
 
+Either way: sign in with that address and password, change the password under
+**Users → Set my password**, and **Users** is where everyone else gets invited
+from. Never come back to the SQL editor for a role again.
+
 ## 5. Auth settings worth checking
 
-- **Authentication → Providers → Email**: with *Confirm email* on, sign-up
-  returns no session until the link is clicked. Both apps already handle this
-  and tell the user to check their inbox rather than dropping them on a
-  signed-out screen.
-- **Authentication → URL Configuration**: add the site and admin origins to
-  *Redirect URLs*, or confirmation links bounce.
+- **Authentication → URL Configuration → Redirect URLs**: add the admin origin
+  with a wildcard — `https://admin.example.com/**`. This is the setting that
+  decides where an invite lands. Supabase only honours the app's requested
+  redirect if it matches this allow-list; otherwise it falls back to **Site
+  URL**, which for this project is the learner site, and an admin invite would
+  drop the person on the wrong app. The wildcard matters: links point at
+  `/enrolments/`, not the bare origin. Add the learner origin too, for its own
+  links.
+- **Authentication → Providers → Email** must be enabled. Invites are sent as
+  magic links, which is a different template from the signup confirmation —
+  turning *Confirm email* off does not turn invites off.
+- **Authentication → Emails → Magic Link** is the template an invitee receives.
+  Worth a sentence of your own wording, since for them it is an invitation
+  rather than a login.
+- **Rate limits**: Supabase's built-in SMTP allows only a handful of emails an
+  hour. That is fine for onboarding a team of five; wire your own SMTP under
+  **Project Settings → Auth → SMTP** before doing more.
+
+## 6. Who can get in, and how
+
+Three roles live in `profiles.role`:
+
+| Role | Admin portal | What they can do |
+|---|---|---|
+| `admin` | yes | Everything, including inviting and removing other people |
+| `viewer` | yes | Read every screen; every write is refused |
+| `learner` | no | Nothing here — an ordinary account on the public site |
+
+**Inviting.** An admin opens **Users → Invite someone**, enters an address and
+picks a role. That writes a row to `admin_invites` and emails a link. The row is
+what grants the role; the email is only how the person reaches it. Opening the
+link signs them in, and a trigger attaches the invited role to their account.
+Someone who already had a learner account picks their invite up on their next
+sign-in instead, via `claim_admin_invite()`.
+
+**Invitees must choose a password before the portal opens.** The invite link is
+one-time and the sign-in screen offers nothing else, so arriving through a link
+lands on a blocking *Choose a password* step — no way past it but setting one or
+signing out. After that they sign in normally, and can change it from
+**Users → Set my password**.
+
+There is still no self-service reset for a *forgotten* password. Recovering one
+means **Authentication → Users** in the dashboard: send a recovery link, or set
+a password for them.
+
+**Why an invite table rather than Supabase's own invite API.** That API needs
+the `service_role` key, and this app is a static export — it has nowhere to keep
+one. Doing it as a table means RLS decides who may invite, which is the check
+that actually matters.
+
+**Removing someone.** *Revoke* drops them to `learner`. Their account survives,
+but every policy stops answering for them on the next request. Deleting the
+account itself needs the `service_role` key, so do that from the dashboard if
+you want it gone entirely.
+
+**Roles are not self-service.** `authenticated` has no UPDATE privilege on
+`profiles.role` at all — not a policy that could be worked around, an absent
+privilege. Roles move only through `set_admin_role()` (which refuses anyone who
+is not an admin, and refuses to let you change your own) or through accepting an
+invite.
 
 ## What the policies actually enforce
 
-| Table | Anonymous | Signed-in learner | Admin |
-|---|---|---|---|
-| `courses` | read `live` only | read `live` only | full |
-| `sessions` | read non-draft on live courses | same | full |
-| `enrolments` | none | read/write **their own** | full |
-| `profiles` | none | read/update **their own** | read all |
+| Table | Anonymous | Signed-in learner | Viewer | Admin |
+|---|---|---|---|---|
+| `courses` | read `live` only | read `live` only | read all | full |
+| `sessions` | read non-draft on live courses | same | read all | full |
+| `enrolments` | none | read/write **their own** | read all | full |
+| `profiles` | none | read/update **their own** | read all | read all |
+| `admin_invites` | none | none | read | full |
+
+A viewer's read-only-ness is a property of the database, not of the buttons the
+UI happens to render. Every write policy is `is_admin()`; the hidden buttons are
+only there so a viewer is not invited to try.
 
 Two rules are enforced in the database rather than the UI, because a browser
 check is only a suggestion:

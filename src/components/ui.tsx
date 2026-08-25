@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 export const label: CSSProperties = {
   font: "700 10px 'Plus Jakarta Sans',sans-serif",
@@ -46,6 +46,53 @@ export function Pill({ tone, children }: { tone: "good" | "warn" | "bad" | "neut
     <span style={{ ...tones[tone], font: "800 9.5px 'Plus Jakarta Sans',sans-serif", borderRadius: 999, padding: "4px 9px", whiteSpace: "nowrap", display: "inline-block" }}>
       {children}
     </span>
+  );
+}
+
+/**
+ * Password box with a Show/Hide toggle.
+ *
+ * The toggle sits inside the field and flips the input's `type`, so the
+ * browser still treats it as a password (autofill, no spellcheck) whenever it
+ * is masked. It always starts masked — someone reading over a shoulder is the
+ * usual reason to want the toggle in the first place.
+ */
+export function PasswordInput({
+  value,
+  onChange,
+  autoComplete,
+  placeholder,
+  autoFocus,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+  placeholder?: string;
+  autoFocus?: boolean;
+}) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div style={{ position: "relative", display: "flex" }}>
+      <input
+        type={shown ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        // Room for the button, so a long password never runs underneath it.
+        style={{ ...input, paddingRight: 62 }}
+      />
+      <button
+        type="button"
+        onClick={() => setShown((s) => !s)}
+        aria-pressed={shown}
+        aria-label={shown ? "Hide password" : "Show password"}
+        style={{ position: "absolute", top: 1, bottom: 1, right: 1, cursor: "pointer", border: "none", background: "transparent", borderRadius: 8, padding: "0 12px", font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--teal)" }}
+      >
+        {shown ? "Hide" : "Show"}
+      </button>
+    </div>
   );
 }
 

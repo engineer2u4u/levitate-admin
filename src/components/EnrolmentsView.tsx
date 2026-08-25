@@ -5,19 +5,25 @@ import { inr } from "@/lib/format";
 import { markPaid, removeEnrolment } from "@/lib/store";
 import { useAdminData } from "@/lib/useStore";
 import { EmptyState, Pill, card, th } from "./ui";
-import { useEnrolDialog, useToast } from "./AdminShell";
+import { PAYMENT_FILTERS, useEnrolDialog, usePaymentFilter, useToast } from "./AdminShell";
+import { useCanWrite } from "./AuthGate";
 
-const FILTERS = ["All", "Paid", "Unpaid"] as const;
-type Filter = (typeof FILTERS)[number];
-
-const GRID = "1.5fr 1.8fr .9fr .9fr 1fr .9fr";
+// The Action column is dropped entirely for viewers rather than filled with
+// disabled buttons — there is nothing there for them to reach.
+const COLUMNS = ["Customer", "Course & session", "Source", "Amount", "Status", "Action"];
+const GRID_WRITE = "1.5fr 1.8fr .9fr .9fr 1fr .9fr";
+const GRID_READ = "1.5fr 1.8fr .9fr .9fr 1fr";
 
 export default function EnrolmentsView() {
   const data = useAdminData();
   const toast = useToast();
   const openEnrol = useEnrolDialog();
-  const [filter, setFilter] = useState<Filter>("All");
+  const canWrite = useCanWrite();
+  // Shared with the shell, so its "awaiting payment" badge can preselect Unpaid.
+  const { filter, setFilter } = usePaymentFilter();
   const [query, setQuery] = useState("");
+
+  const GRID = canWrite ? GRID_WRITE : GRID_READ;
 
   const rows = data.enrolments
     .filter((e) => (filter === "All" ? true : filter === "Paid" ? e.paid : !e.paid))
@@ -53,8 +59,16 @@ export default function EnrolmentsView() {
       <div style={{ ...card, overflow: "hidden" }}>
         <div style={{ padding: "15px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, borderBottom: "1px solid var(--line-soft)", flexWrap: "wrap" }}>
           <div>
-            <div style={{ font: "700 13.5px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)" }}>All enrolments</div>
-            <div style={{ font: "500 11px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginTop: 2 }}>Newest first · includes phone enrolments you created</div>
+            {/* Arriving from the header badge lands on a filtered list, so the
+                heading says which one rather than always claiming "all". */}
+            <div style={{ font: "700 13.5px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)" }}>
+              {filter === "All" ? "All enrolments" : filter === "Paid" ? "Paid enrolments" : "Awaiting payment"}
+            </div>
+            <div style={{ font: "500 11px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginTop: 2 }}>
+              {filter === "All"
+                ? "Newest first · includes phone enrolments you created"
+                : `${rows.length} of ${data.enrolments.length} · newest first`}
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <input
@@ -65,7 +79,7 @@ export default function EnrolmentsView() {
               style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 11px", font: "500 11.5px 'Plus Jakarta Sans',sans-serif", width: 210 }}
             />
             <div role="tablist" aria-label="Filter by payment" style={{ display: "flex", gap: 4, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 8, padding: 3 }}>
-              {FILTERS.map((f) => {
+              {PAYMENT_FILTERS.map((f) => {
                 const on = filter === f;
                 return (
                   <button key={f} type="button" role="tab" aria-selected={on} onClick={() => setFilter(f)} style={{ cursor: "pointer", border: "none", font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: on ? "var(--ink)" : "var(--muted)", background: on ? "#fff" : "transparent", borderRadius: 6, padding: "6px 11px" }}>
@@ -74,7 +88,7 @@ export default function EnrolmentsView() {
                 );
               })}
             </div>
-            <button type="button" className="btn btn-dark" onClick={() => openEnrol()}>+ Enrol a customer</button>
+            {canWrite && <button type="button" className="btn btn-dark" onClick={() => openEnrol()}>+ Enrol a customer</button>}
           </div>
         </div>
 
@@ -85,7 +99,7 @@ export default function EnrolmentsView() {
         ) : (
           <div className="table-scroll">
             <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 12, padding: "10px 18px", background: "#f8fafc", borderBottom: "1px solid var(--line-soft)" }}>
-              {["Customer", "Course & session", "Source", "Amount", "Status", "Action"].map((c) => <div key={c} style={th}>{c}</div>)}
+              {(canWrite ? COLUMNS : COLUMNS.slice(0, -1)).map((c) => <div key={c} style={th}>{c}</div>)}
             </div>
 
             {rows.map((e) => {
@@ -106,23 +120,25 @@ export default function EnrolmentsView() {
                   <div style={{ font: "600 11px 'Plus Jakarta Sans',sans-serif", color: "var(--body)" }}>{e.source}</div>
                   <div style={{ font: "700 12px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)" }}>{inr(e.amountPaise)}</div>
                   <div><Pill tone={e.paid ? "good" : "warn"}>{e.paid ? "Paid" : e.method === "invoice" ? "Invoiced" : "Awaiting payment"}</Pill></div>
-                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <button
-                      type="button"
-                      onClick={() => { markPaid(e.id, !e.paid); toast(e.paid ? `${e.name} marked unpaid` : `${e.name} marked as paid`); }}
-                      style={{ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--teal)" }}
-                    >
-                      {e.paid ? "Mark unpaid" : "Mark paid"}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${e.name}`}
-                      onClick={() => { if (confirm(`Remove ${e.name} from ${course?.title ?? "this course"}? This frees the seat.`)) { removeEnrolment(e.id); toast("Enrolment removed"); } }}
-                      style={{ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}
-                    >
-                      Remove
-                    </button>
-                  </div>
+                  {canWrite && (
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <button
+                        type="button"
+                        onClick={() => { markPaid(e.id, !e.paid); toast(e.paid ? `${e.name} marked unpaid` : `${e.name} marked as paid`); }}
+                        style={{ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--teal)" }}
+                      >
+                        {e.paid ? "Mark unpaid" : "Mark paid"}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${e.name}`}
+                        onClick={() => { if (confirm(`Remove ${e.name} from ${course?.title ?? "this course"}? This frees the seat.`)) { removeEnrolment(e.id); toast("Enrolment removed"); } }}
+                        style={{ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

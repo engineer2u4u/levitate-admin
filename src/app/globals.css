@@ -49,9 +49,33 @@ input:focus, select:focus, textarea:focus {
 .nav-item { transition: background .15s ease, color .15s ease; }
 .nav-item:hover { background: rgba(255, 255, 255, .07); color: #fff !important; }
 
+/* Status pill that is also a link — keeps its own colour rather than the
+   global anchor teal, and darkens slightly to show it is clickable. */
+.pill-link { transition: background .15s ease, border-color .15s ease; }
+.pill-link:hover { background: #fbecd0 !important; border-color: #e3c88c !important; color: #7d560d !important; }
+
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Printing a certificate.
+   `visibility` rather than `display` so the certificate keeps its place in the
+   layout while everything around it goes; positioning it at the page origin at
+   exactly A4-landscape size makes the SVG fill one page with no margin. */
+@media print {
+  @page { size: A4 landscape; margin: 0; }
+
+  body * { visibility: hidden; }
+  .cert-print, .cert-print * { visibility: visible; }
+  /* Size comes from the per-format rule the Certificates screen injects,
+     since the two designs are different shapes. */
+  .cert-print {
+    position: absolute;
+    top: 0;
+    left: 0;
+    box-shadow: none !important;
+  }
 }
 
 @keyframes toastIn {
@@ -80,6 +104,8 @@ input:focus, select:focus, textarea:focus {
   .admin-cta { white-space: nowrap; }
   .kpi-grid { grid-template-columns: 1fr 1fr !important; }
   .course-grid { grid-template-columns: 1fr !important; }
+  /* Certificate preview drops under the form rather than being squeezed. */
+  .cert-layout { grid-template-columns: 1fr !important; }
   .table-scroll { overflow-x: auto; }
   .table-scroll > * { min-width: 760px; }
 }

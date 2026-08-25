@@ -1,4 +1,5 @@
-import type { AdminData, Course, Enrolment, Session } from "./types";
+import type { AdminData, CertificateSettings, Course, Enrolment, Facilitator, Session } from "./types";
+import { DEFAULT_CERTIFICATE } from "./certificate";
 import { SEED } from "./seed";
 
 /**
@@ -23,14 +24,55 @@ export const subscribe = (cb: () => void) => {
  *  useSyncExternalStore compares snapshots by identity. */
 let cache: AdminData | null = null;
 
-export const EMPTY: AdminData = { courses: [], sessions: [], enrolments: [] };
+export const EMPTY: AdminData = { certificate: DEFAULT_CERTIFICATE, facilitators: [], courses: [], sessions: [], enrolments: [] };
+
+/**
+ * Fills in fields added after a browser last wrote its data.
+ *
+ * Courses saved before modules and banners existed have no `modules` array,
+ * and every screen that counts them would throw on the first render. Rather
+ * than version the key and throw the data away, absent fields get their
+ * empty value on read.
+ */
+function normalise(data: AdminData): AdminData {
+  const facilitators = data.facilitators ?? [];
+
+  // Courses used to carry the facilitator's name as free text. Match it to a
+  // real record so the change is invisible; an unmatched name is dropped
+  // rather than kept as a second source of truth.
+  const byName = new Map(facilitators.map((f) => [f.name.trim().toLowerCase(), f.id]));
+  const legacyId = (c: Course & { facilitator?: string }) =>
+    c.facilitatorId ?? byName.get((c.facilitator ?? "").trim().toLowerCase()) ?? "";
+
+  return {
+    ...data,
+    // Settings gained fields over time; anything absent takes the default.
+    certificate: { ...DEFAULT_CERTIFICATE, ...(data.certificate ?? {}) },
+    facilitators,
+    courses: (data.courses ?? []).map((c) => ({
+      ...c,
+      tenure: c.tenure ?? "",
+      facilitatorId: legacyId(c),
+      liveSessionCount: c.liveSessionCount ?? 0,
+      liveSessionSchedule: c.liveSessionSchedule ?? "",
+      bannerUrl: c.bannerUrl ?? "",
+      modules: (c.modules ?? []).map((m) => ({
+        ...m,
+        lessons: m.lessons ?? [],
+        quiz: m.quiz ?? null,
+      })),
+    })),
+    sessions: data.sessions ?? [],
+    enrolments: data.enrolments ?? [],
+  };
+}
 
 export function read(): AdminData {
   if (typeof window === "undefined") return EMPTY;
   if (cache) return cache;
   try {
     const raw = window.localStorage.getItem(KEY);
-    cache = raw ? (JSON.parse(raw) as AdminData) : SEED;
+    cache = raw ? normalise(JSON.parse(raw) as AdminData) : SEED;
     if (!raw) window.localStorage.setItem(KEY, JSON.stringify(SEED));
   } catch {
     cache = SEED;
@@ -50,6 +92,48 @@ function write(next: AdminData) {
 
 const id = (prefix: string) =>
   `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/* --------------------------- certificates ---------------------------- */
+
+export function updateCertificateSettings(patch: Partial<CertificateSettings>) {
+  const d = read();
+  write({ ...d, certificate: { ...d.certificate, ...patch } });
+}
+
+/* --------------------------- facilitators ---------------------------- */
+
+export function createFacilitator(input: Omit<Facilitator, "id" | "createdAt">): Facilitator {
+  const facilitator: Facilitator = { ...input, id: id("f"), createdAt: new Date().toISOString() };
+  const d = read();
+  write({ ...d, facilitators: [...d.facilitators, facilitator] });
+  return facilitator;
+}
+
+export function updateFacilitator(facilitatorId: string, patch: Partial<Omit<Facilitator, "id" | "createdAt">>) {
+  const d = read();
+  write({
+    ...d,
+    facilitators: d.facilitators.map((f) => (f.id === facilitatorId ? { ...f, ...patch } : f)),
+  });
+}
+
+/**
+ * Refuses while any course still points at them.
+ *
+ * Silently clearing the reference would leave courses with no facilitator and
+ * nobody any the wiser, so the caller is told which courses to reassign first.
+ */
+export function removeFacilitator(facilitatorId: string): { blocked: string[] } {
+  const d = read();
+  const used = d.courses.filter((c) => c.facilitatorId === facilitatorId).map((c) => c.title);
+  if (used.length) return { blocked: used };
+  write({ ...d, facilitators: d.facilitators.filter((f) => f.id !== facilitatorId) });
+  return { blocked: [] };
+}
+
+/** Courses this person leads. */
+export const coursesFor = (d: AdminData, facilitatorId: string) =>
+  d.courses.filter((c) => c.facilitatorId === facilitatorId);
 
 /* ------------------------------ courses ------------------------------ */
 
