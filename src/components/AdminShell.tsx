@@ -41,6 +41,9 @@ const NAV = [
   { href: "/sessions", label: "Sessions" },
   { href: "/facilitators", label: "Facilitators" },
   { href: "/certificates", label: "Certificates" },
+  // Read live from Supabase, like Users — the learner site writes it, so
+  // there is nothing about it in the local store the others read.
+  { href: "/progress", label: "Learner progress" },
   // No badge: the count lives in Supabase, not in the local store the others
   // read from, and it is not worth a query on every screen.
   { href: "/users", label: "Users" },
@@ -48,6 +51,7 @@ const NAV = [
 
 const TITLES: Record<string, [string, string]> = {
   "/enrolments": ["Enrolments", "Who is enrolled, and what they owe"],
+  "/progress": ["Learner progress", "How far each learner has got, item by item"],
   "/courses": ["Courses", "Create and maintain the course catalogue"],
   "/sessions": ["Sessions", "Scheduled dates for each course"],
   "/facilitators": ["Facilitators", "The people who teach, and what they lead"],
