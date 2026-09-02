@@ -60,6 +60,26 @@ create trigger course_progress_touch
 
 -- ------------------------------------------------------------------- RLS
 
+-- Defined here as well as in 0001. The policies below depend on it, and a
+-- project that got an earlier 0001 has the tables but not this function — in
+-- which case every `create policy` referencing it fails and the migration
+-- stops halfway. `create or replace` is a no-op where it already exists.
+--
+-- security definer is what makes it work at all: it reads public.profiles to
+-- decide whether the caller is an admin, and the policy on profiles calls this
+-- function. Running as the caller would recurse.
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'admin'
+  );
+$$;
+
 alter table public.course_progress enable row level security;
 
 -- A learner sees and writes only their own row. An admin sees every row but
@@ -97,6 +117,15 @@ create or replace view public.course_progress_admin as
     coalesce(p.org, '')  as learner_org
   from public.course_progress cp
   left join public.profiles p on p.id = cp.user_id;
+
+-- Without this the view is a hole rather than a convenience. A Postgres view
+-- runs as its *owner*, so the row level security above would be evaluated
+-- against postgres — which owns the tables and is therefore exempt — and every
+-- authenticated learner could read every other learner's progress and name
+-- through it. security_invoker makes the view obey the caller's policies, so
+-- `course_progress_own_read` applies as written: a learner sees their own row,
+-- an admin sees all of them.
+alter view public.course_progress_admin set (security_invoker = on);
 
 grant select on public.course_progress_admin to authenticated;
 
