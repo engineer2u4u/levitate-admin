@@ -36,6 +36,8 @@ const FilterCtx = createContext<{ filter: PaymentFilter; setFilter: (f: PaymentF
 export const usePaymentFilter = () => useContext(FilterCtx);
 
 const NAV = [
+  // First: new enquiries are the thing most worth seeing on arrival.
+  { href: "/enquiries", label: "Enquiries" },
   { href: "/enrolments", label: "Enrolments" },
   { href: "/courses", label: "Courses" },
   { href: "/sessions", label: "Sessions" },
@@ -50,6 +52,7 @@ const NAV = [
 ] as const;
 
 const TITLES: Record<string, [string, string]> = {
+  "/enquiries": ["Enquiries", "Everything sent from the website's enquiry forms"],
   "/enrolments": ["Enrolments", "Who is enrolled, and what they owe"],
   "/progress": ["Learner progress", "How far each learner has got, item by item"],
   "/courses": ["Courses", "Create and maintain the course catalogue"],
