@@ -28,6 +28,7 @@ const FORM_TONE: Record<EnquiryForm, "good" | "warn" | "bad" | "neutral"> = {
   contact: "neutral",
   service: "warn",
   kit: "neutral",
+  masterclass: "good",
   other: "neutral",
 };
 
