@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { BASE_PATH } from "./basePath";
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -39,15 +40,19 @@ export function getClient(): Promise<SupabaseClient> {
  * Where an emailed link should land — always this admin portal, never the
  * learner site, even though both share one Supabase project.
  *
- * Set `NEXT_PUBLIC_ADMIN_URL` when the admin is served from a subfolder or
- * behind a different hostname than the one the invite was sent from.
+ * The base path matters more than it looks. The admin lives in a folder of the
+ * main site, so the bare origin is the *public website* — an invite built from
+ * `location.origin` alone would drop the new admin on the marketing homepage.
+ *
+ * Set `NEXT_PUBLIC_ADMIN_URL` only when invites are sent from a different
+ * hostname than the one the admin is served on.
  */
 export function adminUrl(path = ""): string {
   const configured = process.env.NEXT_PUBLIC_ADMIN_URL?.trim();
   const base = configured
     ? configured.replace(/\/+$/, "") + "/"
     : typeof window !== "undefined"
-      ? window.location.origin + "/"
+      ? window.location.origin + BASE_PATH + "/"
       : "";
   return base + path;
 }

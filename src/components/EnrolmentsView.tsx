@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { inr } from "@/lib/format";
 import { markPaid, removeEnrolment } from "@/lib/store";
@@ -150,7 +151,7 @@ export default function EnrolmentsView() {
         <EmptyState
           title="Start with a course"
           body="Create a course, give it a session date, then enrol customers against it."
-          action={<a href="/courses" className="btn btn-primary" style={{ display: "inline-block" }}>Go to Courses</a>}
+          action={<Link href="/courses" className="btn btn-primary" style={{ display: "inline-block" }}>Go to Courses</Link>}
         />
       )}
     </div>

@@ -1,0 +1,19 @@
+# Levitate LMS Admin — served from /admin-panel/ inside the main site.
+#
+# Deliberately NO mod_rewrite directives here. The main site's root .htaccess
+# already forces HTTPS and redirects /admin-panel/courses to
+# /admin-panel/courses/ so the directory index is found. A subfolder .htaccess
+# that so much as says "RewriteEngine On" stops inheriting those rules, and
+# this folder would quietly lose both. Caching, compression and the security
+# headers are inherited from the root the same way.
+
+DirectoryIndex index.html
+
+# The admin's own not-found page, rather than the public site's.
+ErrorDocument 404 /admin-panel/404.html
+
+<IfModule mod_headers.c>
+    # The pages already carry a noindex meta tag. The header also covers what
+    # has no <head> to carry one — the build's JS, the certificate artwork.
+    Header set X-Robots-Tag "noindex, nofollow"
+</IfModule>

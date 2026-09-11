@@ -1,4 +1,5 @@
 import type { CertificateIssue, CertificateSettings } from "./types";
+import { withBase } from "./basePath";
 
 /** Everything a certificate needs before any artwork has been uploaded. */
 export const DEFAULT_CERTIFICATE: CertificateSettings = {
@@ -165,8 +166,10 @@ export const today = () =>
  * build, no Supabase round trip and no per-browser configuration.
  */
 export const LOCAL_PLATES = {
-  shrm: "/certificates/shrm.jpg",
-  excellence: "/certificates/excellence.jpg",
+  // Through withBase: the main site has its own /certificates/ at the root, so
+  // an unprefixed path would quietly load that instead of these.
+  shrm: withBase("/certificates/shrm.jpg"),
+  excellence: withBase("/certificates/excellence.jpg"),
 } as const;
 
 /** Resolves once per URL — a missing file is a 404, not an exception. */
