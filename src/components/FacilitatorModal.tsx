@@ -55,7 +55,7 @@ export default function FacilitatorModal({
       onClose={onClose}
       width={520}
     >
-      <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", gap: 13 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
         <ImageUpload
           label="Photograph"
           value={imageUrl}

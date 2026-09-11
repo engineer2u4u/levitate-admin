@@ -46,7 +46,7 @@ export default function InviteModal({ onClose, onSent }: { onClose: () => void; 
       onClose={onClose}
       width={480}
     >
-      <form onSubmit={submit} style={{ padding: "18px 24px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <Field label="Email">
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" placeholder="name@levitatepeoplesoft.com" style={input} autoFocus />
         </Field>

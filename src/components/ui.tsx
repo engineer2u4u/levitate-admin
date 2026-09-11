@@ -131,7 +131,13 @@ export function Modal({ title, sub, onClose, children, width = 560 }: { title: s
           </div>
           <button type="button" onClick={onClose} aria-label="Close" style={{ cursor: "pointer", border: "none", background: "transparent", font: "600 18px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", lineHeight: 1 }}>×</button>
         </div>
-        {children}
+        {/* The body's inset and rhythm live here, not in each popup. When every
+            caller supplied its own, two forgot — their content ran flush to the
+            card's edges — and the rest disagreed by a few pixels each. Callers
+            now pass content; the frame is the Modal's job. */}
+        <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+          {children}
+        </div>
       </div>
     </div>
   );

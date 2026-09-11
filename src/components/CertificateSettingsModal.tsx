@@ -49,7 +49,7 @@ export default function CertificateSettingsModal({
       onClose={onClose}
       width={620}
     >
-      <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", gap: 15 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
         <div className="form-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field label="Organisation">
             <input value={draft.orgName} onChange={(e) => set("orgName", e.target.value)} style={input} />

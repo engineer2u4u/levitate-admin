@@ -145,7 +145,7 @@ function JourneyModal({ row, onClose }: { row: ProgressRow; onClose: () => void 
       onClose={onClose}
       width={640}
     >
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <Pill tone={s.finished ? "good" : "warn"}>{s.percent}% complete</Pill>
         <Pill tone="neutral">{s.done} of {s.total || "?"} items</Pill>
         {row.completed_at && <Pill tone="good">Finished {day(row.completed_at)}</Pill>}

@@ -133,7 +133,7 @@ export default function CourseModal({ course, onClose }: { course?: Course; onCl
       onClose={onClose}
       width={680}
     >
-      <div style={{ padding: "16px 24px 24px", display: "flex", flexDirection: "column", gap: 15 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
         <div style={{ display: "flex", gap: 6, background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: 999, padding: 5 }}>
           {([["details", "Details"], ["modules", `Modules${modules.length ? ` · ${modules.length}` : ""}`]] as const).map(([t, text]) => (
             <button

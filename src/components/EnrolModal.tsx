@@ -95,7 +95,7 @@ export default function EnrolModal({ prefill, onClose }: Props) {
     const paid = done.method === "paid";
     return (
       <Modal title="Enrolment created" sub={done.name} onClose={onClose}>
-        <div style={{ padding: "22px 24px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ background: "#eafaf8", border: "1px solid #b9ece7", borderRadius: 11, padding: "14px 16px" }}>
             <div style={{ font: "700 12.5px 'Plus Jakarta Sans',sans-serif", color: "#136f6a" }}>
               {paid ? "Enrolled and marked as paid" : done.method === "invoice" ? "Enrolled — invoice to raise" : "Enrolled — payment link ready"}
@@ -145,7 +145,7 @@ export default function EnrolModal({ prefill, onClose }: Props) {
   /* ------------------------------ step 1 ------------------------------ */
   return (
     <Modal title="Enrol a customer" sub="For enquiries you handle over the phone or email" onClose={onClose}>
-      <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {sellable.length === 0 ? (
           <div style={{ font: "500 12.5px/1.7 'Plus Jakarta Sans',sans-serif", color: "var(--body)", background: "#fdf4e3", border: "1px solid #f0dcae", borderRadius: 10, padding: "14px 16px" }}>
             No course is live yet. Publish a course before enrolling anyone.

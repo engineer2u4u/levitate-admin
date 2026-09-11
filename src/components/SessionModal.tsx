@@ -80,7 +80,7 @@ export default function SessionModal({ session, courseId, onClose }: Props) {
       onClose={onClose}
       width={520}
     >
-      <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", gap: 13 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
         {selectable.length === 0 ? (
           <div style={{ font: "500 12.5px/1.7 'Plus Jakarta Sans',sans-serif", color: "var(--body)", background: "#fdf4e3", border: "1px solid #f0dcae", borderRadius: 10, padding: "14px 16px" }}>
             Create a course first — a session has to belong to one.

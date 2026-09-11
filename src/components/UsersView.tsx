@@ -266,7 +266,7 @@ function PasswordModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="Set your password" sub="Lets you sign in without waiting for an email link." onClose={onClose} width={420}>
-      <form onSubmit={submit} style={{ padding: "18px 24px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <Field label="New password">
           <PasswordInput value={value} onChange={setValue} autoComplete="new-password" placeholder="Minimum 8 characters" autoFocus />
         </Field>

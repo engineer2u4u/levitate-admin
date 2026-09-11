@@ -270,7 +270,7 @@ export default function EnquiriesView() {
             ))}
           </dl>
           {open.message && (
-            <div style={{ marginTop: 18 }}>
+            <div>
               <div style={label}>Message</div>
               <div style={{ background: "#f7fafc", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 14px", font: `400 13px/1.7 ${SANS}`, color: "#3d5064", whiteSpace: "pre-wrap" }}>
                 {open.message}
