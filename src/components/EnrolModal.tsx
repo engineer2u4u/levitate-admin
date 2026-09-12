@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { inr } from "@/lib/format";
 import { createEnrolment, seatsLeft } from "@/lib/store";
-import { useAdminData } from "@/lib/useStore";
+import { useAdminData, useCatalogStatus } from "@/lib/useStore";
 import type { PaymentMethod } from "@/lib/types";
 import { Field, Modal, ModalActions, input } from "./ui";
 import { useToast } from "./AdminShell";
@@ -18,6 +18,7 @@ type Props = { prefill: { courseId?: string; sessionId?: string } | null; onClos
 
 export default function EnrolModal({ prefill, onClose }: Props) {
   const data = useAdminData();
+  const catalog = useCatalogStatus();
   const toast = useToast();
 
   // Only sellable courses; a draft has no public price yet.
@@ -148,7 +149,11 @@ export default function EnrolModal({ prefill, onClose }: Props) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {sellable.length === 0 ? (
           <div style={{ font: "500 12.5px/1.7 'Plus Jakarta Sans',sans-serif", color: "var(--body)", background: "#fdf4e3", border: "1px solid #f0dcae", borderRadius: 10, padding: "14px 16px" }}>
-            No course is live yet. Publish a course before enrolling anyone.
+            {catalog.state === "ready"
+              ? "No course is live yet. Publish a course before enrolling anyone."
+              : catalog.state === "error"
+                ? "Courses could not be loaded from the database. Close this and try again from Courses."
+                : "Loading courses…"}
           </div>
         ) : (
           <>

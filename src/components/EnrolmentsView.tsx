@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { inr } from "@/lib/format";
 import { markPaid, removeEnrolment } from "@/lib/store";
-import { useAdminData } from "@/lib/useStore";
+import { useAdminData, useCatalogStatus } from "@/lib/useStore";
+import CatalogState from "./CatalogState";
 import { EmptyState, Pill, card, th } from "./ui";
 import { PAYMENT_FILTERS, useEnrolDialog, usePaymentFilter, useToast } from "./AdminShell";
 import { useCanWrite } from "./AuthGate";
@@ -23,6 +24,10 @@ export default function EnrolmentsView() {
   // Shared with the shell, so its "awaiting payment" badge can preselect Unpaid.
   const { filter, setFilter } = usePaymentFilter();
   const [query, setQuery] = useState("");
+  // Enrolments are local; the courses they name come from the database. Until
+  // those arrive a course is unknown, not deleted.
+  const catalog = useCatalogStatus();
+  const catalogReady = catalog.state === "ready";
 
   const GRID = canWrite ? GRID_WRITE : GRID_READ;
 
@@ -56,6 +61,8 @@ export default function EnrolmentsView() {
           </div>
         ))}
       </div>
+
+      {catalog.state === "error" && <CatalogState status={catalog} what="courses and sessions" />}
 
       <div style={{ ...card, overflow: "hidden" }}>
         <div style={{ padding: "15px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, borderBottom: "1px solid var(--line-soft)", flexWrap: "wrap" }}>
@@ -115,7 +122,7 @@ export default function EnrolmentsView() {
                     <div style={{ font: "500 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.phone || e.email}</div>
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ font: "600 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--body)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{course?.title ?? "— deleted course —"}</div>
+                    <div style={{ font: "600 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--body)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{course?.title ?? (catalogReady ? "— deleted course —" : "Loading…")}</div>
                     <div style={{ font: "500 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>{session ? `${session.date} · ${session.mode}` : "—"}</div>
                   </div>
                   <div style={{ font: "600 11px 'Plus Jakarta Sans',sans-serif", color: "var(--body)" }}>{e.source}</div>
@@ -147,7 +154,7 @@ export default function EnrolmentsView() {
         )}
       </div>
 
-      {data.enrolments.length === 0 && data.courses.length === 0 && (
+      {data.enrolments.length === 0 && catalogReady && data.courses.length === 0 && (
         <EmptyState
           title="Start with a course"
           body="Create a course, give it a session date, then enrol customers against it."

@@ -10,10 +10,16 @@ export type CourseStatus = "live" | "draft" | "archived";
  * not possible.
  */
 export const CATEGORIES = [
-  "POSH · Train-the-Trainer",
+  // PoSH in the brand's casing. The website groups by the exact string, so
+  // these match the rows the catalogue was seeded with (migration 0009).
+  "PoSH · Train-the-Trainer",
   "POCSO · Train-the-Trainer",
   "DEI · Train-the-Trainer",
   "Wellbeing · Train-the-Trainer",
+  "Leadership · Train-the-Trainer",
+  "Institutional",
+  "Masterclass",
+  "Demo",
   "Compliance · Workshop",
   "Leadership · Workshop",
 ] as const;
@@ -164,6 +170,27 @@ export type Facilitator = {
 
 /* -------------------------------- courses ------------------------------- */
 
+/** What a published course offers. `status` decides whether it is published
+ *  at all; this decides what a visitor can do about it. */
+export type SiteStatus = "enrolling" | "waitlist";
+
+/** One line on an Upcoming Batches card: "Batch starts" — "{starts}". */
+export type BatchRow = { k: string; v: string };
+
+/** The course's card on the website's Upcoming Batches list. */
+export type CourseBatch = {
+  /** Whether the course appears on that list at all. */
+  show: boolean;
+  tag: string;
+  title: string;
+  short: string;
+  statusLabel: string;
+  rows: BatchRow[];
+  feeNote: string;
+  /** The button's text, e.g. "Enrol for this batch". */
+  cta: string;
+};
+
 export type Course = {
   id: string;
   title: string;
@@ -186,6 +213,42 @@ export type Course = {
   bannerUrl: string;
   modules: Module[];
   status: CourseStatus;
+  /**
+   * Its address on the website, e.g. "posh-trainer". Made from the title when
+   * the course is created and never changed afterwards: the site, its sitemap
+   * and every link anyone has shared address the course by it.
+   */
+  slug: string;
+
+  /* ---- what the public website prints ---- */
+
+  /** "PoSH Train-the-Trainer": the name in the nav, cards and bars. */
+  short: string;
+  /** The small label on a catalogue card. */
+  tag: string;
+  /** "Live online · Weekend batch". May contain placeholders. */
+  mode: string;
+  siteStatus: SiteStatus;
+  /** Published and reachable, but kept out of the nav, catalogue and sitemap. */
+  hidden: boolean;
+  /** No fee set yet: the site shows "On request" and takes no payment. */
+  priceOnRequest: boolean;
+  /** "incl. taxes · from {starts_short}". May contain placeholders. */
+  priceNote: string;
+  /** The struck-through "standard fee" beside a discounted one. Never charged. */
+  listPricePaise: number | null;
+  modulesLabel: string;
+  hoursLabel: string;
+  /** The facilitator as the site prints them. Copied from the chosen
+   *  facilitator on save, because those records live only in this browser. */
+  facilitatorName: string;
+  /** Card image: a path on the site ("/assets/…") or a full URL. */
+  image: string;
+  /** Lower comes first on the website. */
+  sortOrder: number;
+  /** Shown as the start while the course has no dated session: "October 2026". */
+  startsLabel: string;
+  batch: CourseBatch;
   createdAt: string;
 };
 
@@ -208,13 +271,24 @@ export type SessionStatus = "open" | "filling" | "full" | "draft" | "closed";
 export type Session = {
   id: string;
   courseId: string;
+  /** The day it runs, "2026-10-03". What sessions sort by, and what `date`
+   *  is generated from. Null only on a row made without one. */
+  startsOn: string | null;
+  /** The day as printed, "Sat 3 Oct 2026". */
   date: string;
+  /** The timing as printed, "6:00 – 8:00 PM IST". Free text. */
   time: string;
   /** "Online · Zoom" or "Onsite · Bengaluru". */
   mode: string;
   trainer: string;
   seats: number;
   status: SessionStatus;
+  /** What the session covers. Optional. */
+  topic: string;
+  /** The exact start and end, where the minute matters — the masterclass
+   *  stops taking payment at `startsAt`. ISO timestamps, or null. */
+  startsAt: string | null;
+  endsAt: string | null;
   createdAt: string;
 };
 
@@ -246,6 +320,15 @@ export type AdminData = {
   enrolments: Enrolment[];
 };
 
+/** The part of `AdminData` held in this browser. Courses and sessions are
+ *  the database's, and never stored locally. */
+export type LocalData = Pick<AdminData, "certificate" | "facilitators" | "enrolments">;
+
+/** A course as the form edits it: everything but what is fixed on creation. */
+export type CourseInput = Omit<Course, "id" | "slug" | "createdAt">;
+
+export type SessionInput = Omit<Session, "id" | "createdAt">;
+
 /* -------------------------------- factories ----------------------------- */
 
 const rid = (prefix: string) =>
@@ -276,4 +359,15 @@ export const emptyModule = (): Module => ({
   imageUrl: "",
   lessons: [],
   quiz: null,
+});
+
+export const emptyBatch = (): CourseBatch => ({
+  show: false,
+  tag: "",
+  title: "",
+  short: "",
+  statusLabel: "",
+  rows: [],
+  feeNote: "",
+  cta: "",
 });

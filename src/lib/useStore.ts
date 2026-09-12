@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import { EMPTY, read, subscribe } from "./store";
+import { CATALOG_IDLE, EMPTY, read, readCatalogStatus, subscribe } from "./store";
 
 /**
  * Live view of the admin data. Reads come straight from the store rather than
@@ -15,4 +15,13 @@ export function useAdminData() {
     // The server has no storage; rendering empty keeps hydration consistent.
     useCallback(() => EMPTY, []),
   );
+}
+
+/**
+ * Whether courses and sessions have arrived from the database. A screen that
+ * lists them shows this instead of an empty list, which would otherwise read
+ * as "there are none".
+ */
+export function useCatalogStatus() {
+  return useSyncExternalStore(subscribe, readCatalogStatus, () => CATALOG_IDLE);
 }

@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { inr } from "@/lib/format";
 import { removeCourse } from "@/lib/store";
-import { useAdminData } from "@/lib/useStore";
+import { useAdminData, useCatalogStatus } from "@/lib/useStore";
 import type { Course } from "@/lib/types";
+import CatalogState from "./CatalogState";
 import CourseModal from "./CourseModal";
 import SessionModal from "./SessionModal";
 import { EmptyState, Pill, card } from "./ui";
@@ -13,6 +14,7 @@ import { useCanWrite } from "./AuthGate";
 
 export default function CoursesView() {
   const data = useAdminData();
+  const status = useCatalogStatus();
   const toast = useToast();
   const canWrite = useCanWrite();
   const [editing, setEditing] = useState<Course | "new" | null>(null);
@@ -20,14 +22,18 @@ export default function CoursesView() {
 
   const tone = (s: Course["status"]) => (s === "live" ? "good" : s === "draft" ? "neutral" : "bad");
 
-  const onDelete = (c: Course) => {
+  const onDelete = async (c: Course) => {
     const enrolled = data.enrolments.filter((e) => e.courseId === c.id).length;
     const message = enrolled
       ? `${c.title} has ${enrolled} enrolment${enrolled === 1 ? "" : "s"}. It will be archived rather than deleted, so those records stay intact. Continue?`
       : `Delete ${c.title}? Its ${data.sessions.filter((s) => s.courseId === c.id).length} session(s) go too. This cannot be undone.`;
     if (!confirm(message)) return;
-    const { archived } = removeCourse(c.id);
-    toast(archived ? "Course archived — enrolment history kept" : "Course deleted");
+    const res = await removeCourse(c.id);
+    if (!res.ok) {
+      toast(res.error);
+      return;
+    }
+    toast(res.archived ? "Course archived — enrolment history kept" : "Course deleted");
   };
 
   return (
@@ -39,7 +45,9 @@ export default function CoursesView() {
         {canWrite && <button type="button" className="btn btn-dark" onClick={() => setEditing("new")}>+ New course</button>}
       </div>
 
-      {data.courses.length === 0 ? (
+      {data.courses.length === 0 && status.state !== "ready" ? (
+        <CatalogState status={status} what="courses" />
+      ) : data.courses.length === 0 ? (
         <EmptyState
           title="No courses yet"
           body={canWrite
@@ -107,7 +115,7 @@ export default function CoursesView() {
                     <button type="button" className="btn btn-ghost" onClick={() => setEditing(c)}>Edit course</button>
                     <button
                       type="button"
-                      onClick={() => onDelete(c)}
+                      onClick={() => void onDelete(c)}
                       style={{ cursor: "pointer", border: "none", background: "none", font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", padding: "0 4px" }}
                     >
                       {data.enrolments.some((e) => e.courseId === c.id) ? "Archive" : "Delete"}

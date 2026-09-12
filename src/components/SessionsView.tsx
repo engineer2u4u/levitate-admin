@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { effectiveStatus, removeSession, seatsTaken } from "@/lib/store";
-import { useAdminData } from "@/lib/useStore";
+import { useAdminData, useCatalogStatus } from "@/lib/useStore";
 import type { Session } from "@/lib/types";
+import CatalogState from "./CatalogState";
 import SessionModal from "./SessionModal";
 import { EmptyState, Pill, card, th } from "./ui";
 import { useEnrolDialog, useToast } from "./AdminShell";
@@ -17,6 +18,7 @@ const GRID_READ = "1.8fr 1.1fr 1fr 1.1fr .9fr";
 
 export default function SessionsView() {
   const data = useAdminData();
+  const status = useCatalogStatus();
   const toast = useToast();
   const openEnrol = useEnrolDialog();
   const canWrite = useCanWrite();
@@ -27,9 +29,13 @@ export default function SessionsView() {
   const tone = (label: string) =>
     label === "Full" ? "bad" : label === "Draft" || label === "Closed" ? "neutral" : label === "Filling" ? "warn" : "good";
 
-  const onDelete = (s: Session) => {
-    const { blocked } = removeSession(s.id);
-    if (blocked) {
+  const onDelete = async (s: Session) => {
+    const res = await removeSession(s.id);
+    if (!res.ok) {
+      toast(res.error);
+      return;
+    }
+    if (res.blocked) {
       toast("Cannot delete — people are enrolled on that session");
       return;
     }
@@ -45,7 +51,9 @@ export default function SessionsView() {
         {canWrite && <button type="button" className="btn btn-dark" onClick={() => setEditing("new")}>+ New session</button>}
       </div>
 
-      {data.sessions.length === 0 ? (
+      {data.sessions.length === 0 && status.state !== "ready" ? (
+        <CatalogState status={status} what="sessions" />
+      ) : data.sessions.length === 0 ? (
         <EmptyState
           title="Nothing scheduled"
           body={canWrite
@@ -95,7 +103,7 @@ export default function SessionsView() {
                         Enrol someone
                       </button>
                       <button type="button" onClick={() => setEditing(s)} style={{ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--body)" }}>Edit</button>
-                      <button type="button" onClick={() => onDelete(s)} style={{ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>Delete</button>
+                      <button type="button" onClick={() => void onDelete(s)} style={{ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>Delete</button>
                     </div>
                   )}
                 </div>

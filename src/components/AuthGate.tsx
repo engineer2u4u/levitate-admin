@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { canWrite, currentUser, hasAccess, needsPassword, onAuthChange, setPassword, signIn, signOut, type AdminUser } from "@/lib/auth";
+import { clearCatalog, loadCatalog } from "@/lib/store";
 import { supabaseConfigured } from "@/lib/supabase";
 import { Field, PasswordInput, input } from "./ui";
 
@@ -119,6 +120,16 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       unsub();
     };
   }, []);
+
+  // Courses and sessions come from the database, which answers only a staff
+  // session — so they load once one is in and are dropped when it ends. Keyed
+  // on the id rather than the object: a token refresh re-reads the same user,
+  // and must not reload the catalogue.
+  const staffId = user && hasAccess(user) && !needsPassword(user) ? user.id : null;
+  useEffect(() => {
+    if (staffId) void loadCatalog();
+    else clearCatalog();
+  }, [staffId]);
 
   const doSignOut = useCallback(async () => {
     await signOut();

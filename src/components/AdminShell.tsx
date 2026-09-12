@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { useAdminData } from "@/lib/useStore";
+import { useAdminData, useCatalogStatus } from "@/lib/useStore";
 import { initials } from "@/lib/format";
 import EnrolModal from "./EnrolModal";
 import { useAdminUser } from "./AuthGate";
@@ -64,6 +64,7 @@ const TITLES: Record<string, [string, string]> = {
 
 export default function AdminShell({ children }: { children: ReactNode }) {
   const data = useAdminData();
+  const catalogReady = useCatalogStatus().state === "ready";
   const { user, canWrite, signOut } = useAdminUser();
   const pathname = usePathname() ?? "/enrolments";
   const [toast, setToast] = useState<{ id: number; message: string } | null>(null);
@@ -113,8 +114,10 @@ export default function AdminShell({ children }: { children: ReactNode }) {
                   const on = pathname.startsWith(n.href);
                   const badge =
                     n.href === "/enrolments" ? data.enrolments.length
-                    : n.href === "/courses" ? data.courses.length
-                    : n.href === "/sessions" ? data.sessions.length
+                    // No count until the database has answered: a "0" there
+                    // would be a claim, not a placeholder.
+                    : n.href === "/courses" ? (catalogReady ? data.courses.length : null)
+                    : n.href === "/sessions" ? (catalogReady ? data.sessions.length : null)
                   : n.href === "/facilitators" ? data.facilitators.length
                     : null;
                   return (
