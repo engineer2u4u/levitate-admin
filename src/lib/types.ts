@@ -55,11 +55,12 @@ export type Module = {
 
 /* ----------------------------- certificates ----------------------------- */
 
-export type CertificateTemplate = "shrm" | "excellence";
+export type CertificateTemplate = "shrm" | "excellence" | "cpd";
 
 export const CERTIFICATE_TEMPLATES: { key: CertificateTemplate; label: string; sub: string }[] = [
   { key: "shrm", label: "SHRM Recertification", sub: "Formal, bordered, carries a PDC count" },
   { key: "excellence", label: "Award of Excellence", sub: "Levitate house style, two signatories" },
+  { key: "cpd", label: "CPD Certificate", sub: "The CPD Certification Service format, A4 portrait, carries CPD hours" },
 ];
 
 /**
@@ -94,6 +95,7 @@ export type CertificateSettings = {
    */
   shrmPlateUrl: string;
   excellencePlateUrl: string;
+  cpdPlateUrl: string;
   /**
    * True when the plates still carry their specimen text — "[Name of
    * Recipient]", "Your Name Here". Paints a patch over each such area before
@@ -123,6 +125,8 @@ export type CertificateIssue = {
   completedOn: string;
   hours: string;
   pdcs: string;
+  /** "No. CPD Hours/ Points" on the CPD format. */
+  cpdHours: string;
   certificateId: string;
 };
 

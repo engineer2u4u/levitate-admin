@@ -36,6 +36,7 @@ export default function CertificatesView() {
     completedOn: today(),
     hours: "",
     pdcs: "",
+    cpdHours: "",
     certificateId: suggestId(),
   });
   const set = <K extends keyof CertificateIssue>(key: K, value: CertificateIssue[K]) => {
@@ -54,7 +55,12 @@ export default function CertificatesView() {
   // An uploaded plate wins; otherwise a file dropped into public/certificates/
   // is used if it is actually there. Probed rather than assumed, so a missing
   // file falls back to the drawn layout instead of rendering onto nothing.
-  const uploaded = issue.template === "shrm" ? data.certificate.shrmPlateUrl : data.certificate.excellencePlateUrl;
+  const uploaded = {
+    shrm: data.certificate.shrmPlateUrl,
+    excellence: data.certificate.excellencePlateUrl,
+    cpd: data.certificate.cpdPlateUrl,
+  }[issue.template];
+  const portrait = canvas.h > canvas.w;
   const [localPlate, setLocalPlate] = useState("");
   useEffect(() => {
     let alive = true;
@@ -93,7 +99,9 @@ export default function CertificatesView() {
       return null;
     }
     try {
-      return await svgToPng(svgRef.current, canvas, 2.5);
+      // The CPD plate is already print-size; 2.5× of it would be a 29-megapixel
+      // canvas, past what some browsers will allocate.
+      return await svgToPng(svgRef.current, canvas, issue.template === "cpd" ? 1.25 : 2.5);
     } catch (err) {
       toast(err instanceof Error ? err.message : "The certificate could not be rendered");
       return null;
@@ -170,12 +178,16 @@ export default function CertificatesView() {
           </Field>
 
           <div className="form-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <Field label="Completed on">
+            <Field label={issue.template === "cpd" ? "Date of CPD activity" : "Completed on"}>
               <input value={issue.completedOn} onChange={(e) => set("completedOn", e.target.value)} placeholder="18 Sep 2026" style={input} />
             </Field>
             {issue.template === "excellence" ? (
               <Field label="Hours">
                 <input value={issue.hours} onChange={(e) => set("hours", e.target.value)} placeholder="12 Hours" style={input} />
+              </Field>
+            ) : issue.template === "cpd" ? (
+              <Field label="CPD hours / points">
+                <input value={issue.cpdHours} onChange={(e) => set("cpdHours", e.target.value)} placeholder="15" style={input} />
               </Field>
             ) : (
               <Field label="PDCs">
@@ -214,8 +226,11 @@ export default function CertificatesView() {
           )}
           {/* The page is sized to the artwork, so printing neither crops nor
               letterboxes it. Injected here because it varies per format. */}
-          <style>{`@media print { @page { size: ${canvas.pageMm.w}mm ${canvas.pageMm.h}mm; margin: 0; } .cert-print, .cert-print svg { width: ${canvas.pageMm.w}mm; height: ${canvas.pageMm.h}mm; } }`}</style>
-          <div className="cert-print" style={{ background: "#fff", boxShadow: "0 10px 30px rgba(10,31,56,.13)" }}>
+          {/* On screen a portrait certificate is held to a readable width —
+              full width it would stand taller than the window. Print is
+              unaffected: its size comes from the page rule. */}
+          <style>{`@media print { @page { size: ${canvas.pageMm.w}mm ${canvas.pageMm.h}mm; margin: 0; } .cert-print, .cert-print svg { width: ${canvas.pageMm.w}mm; height: ${canvas.pageMm.h}mm; } } @media screen { .cert-portrait { width: 100%; max-width: 560px; margin: 0 auto; } }`}</style>
+          <div className={portrait ? "cert-print cert-portrait" : "cert-print"} style={{ background: "#fff", boxShadow: "0 10px 30px rgba(10,31,56,.13)" }}>
             <CertificateArt ref={svgRef} issue={issue} settings={data.certificate} plate={plate} maskColors={maskColors} />
           </div>
         </div>

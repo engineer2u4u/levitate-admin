@@ -1,11 +1,12 @@
 # Certificate plates
 
-Drop the two finished certificate designs here, named exactly:
+Drop the finished certificate designs here, named exactly:
 
 | File | Format | Size |
 |---|---|---|
 | `shrm.png` | SHRM Certificate of Completion | 1536 x 1024 |
 | `excellence.png` | Award of Excellence | 1600 x 900 |
+| `cpd.jpg` | CPD Certificate (The CPD Certification Service template) | 1819 x 2573 |
 
 The Certificates screen picks them up on load — no upload, no configuration.
 A file that is not here is simply not used, and the drawn layout stands in.

@@ -8,7 +8,7 @@ const SERIF = "Georgia, 'Times New Roman', serif";
 const SANS = "'Plus Jakarta Sans', 'Segoe UI', sans-serif";
 
 /**
- * Both certificate formats, drawn on a canvas the size of the artwork.
+ * Every certificate format, drawn on a canvas the size of the artwork.
  *
  * A plate — the finished design, uploaded once — is the background, and only
  * the fields that change are drawn on top, at coordinates measured from the
@@ -43,9 +43,13 @@ const CertificateArt = forwardRef<SVGSVGElement, Props>(
         role="img"
         aria-label={`Certificate for ${issue.recipientName || "recipient"}`}
       >
-        {issue.template === "shrm"
-          ? <Shrm issue={issue} settings={settings} plate={plate} maskColors={maskColors} />
-          : <Excellence issue={issue} settings={settings} plate={plate} maskColors={maskColors} />}
+        {issue.template === "shrm" ? (
+          <Shrm issue={issue} settings={settings} plate={plate} maskColors={maskColors} />
+        ) : issue.template === "cpd" ? (
+          <Cpd issue={issue} settings={settings} plate={plate} />
+        ) : (
+          <Excellence issue={issue} settings={settings} plate={plate} maskColors={maskColors} />
+        )}
       </svg>
     );
   },
@@ -351,6 +355,85 @@ function Excellence({ issue, settings, plate, maskColors }: Omit<Props, "issue">
       </text>
       <text x="362" y="852" textAnchor="end" fontFamily={SANS} fontSize="17" fontWeight="800" fill="#ffffff">
         {issue.completedOn || "—"}
+      </text>
+    </>
+  );
+}
+
+/* -------------------------- C · CPD, 1819 × 2573 -------------------------- */
+
+const C = CANVASES.cpd;
+// The plate's body copy is centred here, a little left of the page centre;
+// the values sit under those lines, so they share it.
+const C_MID = 893;
+const C_INK = "#111111";
+const C_PURPLE = "#3f2d7a";
+
+/**
+ * The CPD Certification Service's delegate certificate.
+ *
+ * Its plate is clean — the background image from the Service's own Word
+ * template — so nothing is patched; the five values are written into the gaps
+ * the template leaves, on the baselines of its labels.
+ */
+function Cpd({ issue, settings, plate }: Pick<Props, "issue" | "settings" | "plate">) {
+  // The activity has the band between "the above named has participated…" and
+  // "CPD Provider Organisation" to itself, so a long title takes more lines
+  // before it takes smaller type.
+  const activityLines = wrap(issue.courseName || "Course name", 44);
+  const activity = fitBlock(activityLines.length, 1240, [0, 58, 56, 50], [44, 44, 42, 38]);
+  const name = issue.recipientName || "[Name of Delegate]";
+
+  return (
+    <>
+      <rect width={C.w} height={C.h} fill="#fff" />
+
+      {plate ? (
+        <image href={plate} x="0" y="0" width={C.w} height={C.h} preserveAspectRatio="none" />
+      ) : (
+        <>
+          <rect x="62" y="190" width={C.w - 124} height={C.h - 250} rx="110" fill="none" stroke="#5b4a9c" strokeWidth="40" />
+          <circle cx={C.w / 2} cy="190" r="118" fill={C_PURPLE} />
+          <text x={C.w / 2} y="444" textAnchor="middle" fontFamily={SERIF} fontSize="118" fontWeight="700" fill={C_PURPLE}>CERTIFICATE</text>
+          <text x={C.w / 2} y="519" textAnchor="middle" fontFamily={SANS} fontSize="30" fill="#666">OF</text>
+          <text x={C.w / 2} y="642" textAnchor="middle" fontFamily={SANS} fontSize="76" fontWeight="700" fill="#b0578a">CONTINUING PROFESSIONAL</text>
+          <text x={C.w / 2} y="734" textAnchor="middle" fontFamily={SANS} fontSize="76" fontWeight="700" fill="#b0578a">DEVELOPMENT</text>
+          <text x={C_MID} y="1100" textAnchor="middle" fontFamily={SANS} fontSize="42" fill="#555">the above named has participated in the following CPD activity</text>
+          <text x={C_MID} y="1596" textAnchor="middle" fontFamily={SANS} fontSize="40" fill="#555">CPD Provider Organisation</text>
+          <text x="525" y="2024" fontFamily={SANS} fontSize="42" fontWeight="700" fill="#444">Date of CPD Activity:</text>
+          <text x="525" y="2116" fontFamily={SANS} fontSize="42" fontWeight="700" fill="#444">No. CPD Hours/ Points:</text>
+          {/* The Service's mark is theirs to supply — it comes with the plate. */}
+          <g>
+            <rect x="1400" y="2210" width="220" height="200" rx="10" fill="#f1eef8" stroke="#d6cfe9" />
+            <text x="1510" y="2305" textAnchor="middle" fontFamily={SANS} fontSize="24" fontWeight="800" fill="#9a8cc4">CPD MARK</text>
+            <text x="1510" y="2338" textAnchor="middle" fontFamily={SANS} fontSize="17" fontWeight="600" fill="#b3a8d2">comes with the plate</text>
+          </g>
+        </>
+      )}
+
+      {/* ---- the fields that change ---- */}
+
+      {/* Between "DEVELOPMENT" and the line naming the delegate. */}
+      <text x={C_MID} y="962" textAnchor="middle" fontFamily={SANS} fontSize={name.length > 34 ? 52 : 66} fontWeight="700" fill={C_INK}>
+        {name}
+      </text>
+
+      {activityLines.map((line, i) => (
+        <text key={i} x={C_MID} y={activity.startY + i * activity.step + 15} textAnchor="middle" fontFamily={SANS} fontSize={activity.size} fontWeight="700" fill={C_INK}>
+          {line}
+        </text>
+      ))}
+
+      <text x={C_MID} y="1724" textAnchor="middle" fontFamily={SANS} fontSize="44" fontWeight="700" fill={C_INK}>
+        {settings.orgName}
+      </text>
+
+      {/* Past the longer of the two labels, on their baselines. */}
+      <text x="1015" y="2024" fontFamily={SANS} fontSize="44" fontWeight="700" fill={C_INK}>
+        {issue.completedOn || "—"}
+      </text>
+      <text x="1015" y="2116" fontFamily={SANS} fontSize="44" fontWeight="700" fill={C_INK}>
+        {issue.cpdHours || "[Number]"}
       </text>
     </>
   );

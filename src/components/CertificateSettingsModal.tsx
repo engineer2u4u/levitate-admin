@@ -68,7 +68,7 @@ export default function CertificateSettingsModal({
           Export each certificate as a PNG or JPEG at full size, <strong>with the specimen text removed</strong> — no
           &ldquo;Your Name Here&rdquo;, no sample dates. Everything else stays: border, logos, seal, signatures, footer.
           <br />
-          SHRM format <strong>1536 × 1024</strong> · Award format <strong>1600 × 900</strong>.
+          SHRM format <strong>1536 × 1024</strong> · Award format <strong>1600 × 900</strong> · CPD format <strong>1819 × 2573</strong>.
         </div>
 
         <ImageUpload
@@ -84,6 +84,13 @@ export default function CertificateSettingsModal({
           onChange={(url) => set("excellencePlateUrl", url)}
           folder="certificate"
           size={{ w: 1600, h: 900, label: "1600 × 900 px (16:9)" }}
+        />
+        <ImageUpload
+          label="CPD format plate"
+          value={draft.cpdPlateUrl}
+          onChange={(url) => set("cpdPlateUrl", url)}
+          folder="certificate"
+          size={{ w: 1819, h: 2573, label: "1819 × 2573 px (A4 portrait)" }}
         />
 
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", border: "1px solid var(--line)", borderRadius: 10, padding: "11px 13px" }}>

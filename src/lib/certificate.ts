@@ -1,4 +1,4 @@
-import type { CertificateIssue, CertificateSettings } from "./types";
+import type { CertificateIssue, CertificateSettings, CertificateTemplate } from "./types";
 import { withBase } from "./basePath";
 
 /** Everything a certificate needs before any artwork has been uploaded. */
@@ -12,6 +12,7 @@ export const DEFAULT_CERTIFICATE: CertificateSettings = {
   borderUrl: "",
   shrmPlateUrl: "",
   excellencePlateUrl: "",
+  cpdPlateUrl: "",
   plateHasSampleText: true,
   primarySignatureUrl: "",
   primaryName: "Parichita Kotnala",
@@ -27,13 +28,15 @@ export const DEFAULT_CERTIFICATE: CertificateSettings = {
 /**
  * One canvas per format, matching the artwork's own proportions.
  *
- * Not a shared A4 box: the two designs are 3:2 and 16:9, and forcing either
- * into the other's shape would letterbox the plate or crop it. Print pages are
+ * Not a shared box: the designs are 3:2, 16:9 and A4 portrait, and forcing any
+ * into another's shape would letterbox the plate or crop it. Print pages are
  * sized to match, below.
  */
 export const CANVASES = {
   shrm: { w: 1536, h: 1024, pageMm: { w: 297, h: 198 } },
   excellence: { w: 1600, h: 900, pageMm: { w: 297, h: 167 } },
+  // The CPD Certification Service's delegate template, at its own pixel size.
+  cpd: { w: 1819, h: 2573, pageMm: { w: 210, h: 297 } },
 } as const;
 
 /**
@@ -170,6 +173,7 @@ export const LOCAL_PLATES = {
   // an unprefixed path would quietly load that instead of these.
   shrm: withBase("/certificates/shrm.jpg"),
   excellence: withBase("/certificates/excellence.jpg"),
+  cpd: withBase("/certificates/cpd.jpg"),
 } as const;
 
 /** Resolves once per URL — a missing file is a 404, not an exception. */
@@ -199,7 +203,7 @@ export function plateExists(url: string): Promise<boolean> {
  */
 export type MaskRegion = { id: string; x: number; y: number; w: number; h: number; sampleAt: [number, number] };
 
-export const MASKS: Record<"shrm" | "excellence", MaskRegion[]> = {
+export const MASKS: Record<CertificateTemplate, MaskRegion[]> = {
   // Measured off the artwork. Every rectangle stays inside the plate's white
   // field — a patch that strayed onto the engraved border would erase it.
   shrm: [
@@ -220,6 +224,9 @@ export const MASKS: Record<"shrm" | "excellence", MaskRegion[]> = {
     { id: "certId", x: 200, y: 780, w: 180, h: 34, sampleAt: [190, 797] },
     { id: "issued", x: 200, y: 828, w: 180, h: 34, sampleAt: [190, 845] },
   ],
+  // Nothing to cover: the plate is the background image lifted out of the CPD
+  // Certification Service's Word template, which carries no specimen text.
+  cpd: [],
 };
 
 export type MaskColors = Record<string, string>;
@@ -230,10 +237,11 @@ export type MaskColors = Record<string, string>;
  * Drawn into a canvas first because the alternative — guessing "#ffffff" —
  * leaves a visible white block anywhere the artwork is not white.
  */
-export async function sampleMaskColors(plateUrl: string, template: "shrm" | "excellence", canvas: { w: number; h: number }): Promise<MaskColors> {
+export async function sampleMaskColors(plateUrl: string, template: CertificateTemplate, canvas: { w: number; h: number }): Promise<MaskColors> {
   const regions = MASKS[template];
   const fallback: MaskColors = Object.fromEntries(regions.map((r) => [r.id, "#ffffff"]));
-  if (typeof window === "undefined" || !plateUrl) return fallback;
+  // A format with nothing to patch has nothing to sample — skip the download.
+  if (typeof window === "undefined" || !plateUrl || !regions.length) return fallback;
 
   try {
     // Via a blob so the canvas is never tainted, whatever the host's CORS.
