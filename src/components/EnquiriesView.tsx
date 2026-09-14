@@ -12,7 +12,13 @@ import {
 import { EmptyState, Modal, ModalActions, Pill, card, input, label, th } from "./ui";
 
 const SANS = "'Plus Jakarta Sans',sans-serif";
-const GRID = "1.1fr 1.6fr 1.3fr 1.6fr 0.9fr";
+// minmax(0,…) rather than a bare fr: an fr track never shrinks below its
+// min-content width, so a single long unbroken line — a payment note, a long
+// email — would widen its own column and crush all the others. Cells clip
+// instead; the row opens a dialog with the full text.
+const GRID = "minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1.6fr) minmax(0,0.9fr)";
+const cell = { minWidth: 0 } as const;
+const clip = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } as const;
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
@@ -197,11 +203,11 @@ export default function EnquiriesView() {
       {/* ------------------------------------------------------------ table */}
       <div style={card}>
         <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 12, padding: "14px 20px", borderBottom: "1px solid var(--line)" }}>
-          <div style={th}>Received</div>
-          <div style={th}>Name &amp; organisation</div>
-          <div style={th}>Contact</div>
-          <div style={th}>Programme</div>
-          <div style={th}>Form</div>
+          <div style={{ ...th, ...cell }}>Received</div>
+          <div style={{ ...th, ...cell }}>Name &amp; organisation</div>
+          <div style={{ ...th, ...cell }}>Contact</div>
+          <div style={{ ...th, ...cell }}>Programme</div>
+          <div style={{ ...th, ...cell }}>Form</div>
         </div>
 
         {shown.length === 0 ? (
@@ -228,24 +234,24 @@ export default function EnquiriesView() {
                 alignItems: "start",
               }}
             >
-              <div style={{ font: `500 12px/1.5 ${SANS}`, color: "#5b6e82" }}>{when(r.created_at)}</div>
-              <div>
-                <div style={{ font: `700 13px ${SANS}`, color: "#0a1b33" }}>{r.name}</div>
-                {r.organization && <div style={{ font: `500 11.5px ${SANS}`, color: "#8296a9", marginTop: 2 }}>{r.organization}</div>}
+              <div style={{ ...cell, font: `500 12px/1.5 ${SANS}`, color: "#5b6e82" }}>{when(r.created_at)}</div>
+              <div style={cell}>
+                <div style={{ font: `700 13px ${SANS}`, color: "#0a1b33", overflowWrap: "anywhere" }}>{r.name}</div>
+                {r.organization && <div style={{ font: `500 11.5px ${SANS}`, color: "#8296a9", marginTop: 2, overflowWrap: "anywhere" }}>{r.organization}</div>}
               </div>
-              <div style={{ font: `500 12px/1.6 ${SANS}`, color: "#3d5064", wordBreak: "break-word" }}>
-                <div>{r.email}</div>
-                {r.phone && <div style={{ color: "#8296a9" }}>{r.phone}</div>}
+              <div style={{ ...cell, font: `500 12px/1.6 ${SANS}`, color: "#3d5064" }}>
+                <div style={clip}>{r.email}</div>
+                {r.phone && <div style={{ ...clip, color: "#8296a9" }}>{r.phone}</div>}
               </div>
-              <div style={{ font: `500 12px/1.5 ${SANS}`, color: "#3d5064" }}>
-                {r.intent || <span style={{ color: "#a9b8c6" }}>—</span>}
+              <div style={{ ...cell, font: `500 12px/1.5 ${SANS}`, color: "#3d5064" }}>
+                {r.intent ? <div style={clip}>{r.intent}</div> : <span style={{ color: "#a9b8c6" }}>—</span>}
                 {r.message && (
-                  <div style={{ color: "#8296a9", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div style={{ ...clip, color: "#8296a9", marginTop: 3 }}>
                     {r.message}
                   </div>
                 )}
               </div>
-              <div><Pill tone={FORM_TONE[r.form] ?? "neutral"}>{FORM_LABEL[r.form] ?? r.form}</Pill></div>
+              <div style={{ ...cell, justifySelf: "start" }}><Pill tone={FORM_TONE[r.form] ?? "neutral"}>{FORM_LABEL[r.form] ?? r.form}</Pill></div>
             </button>
           ))
         )}
