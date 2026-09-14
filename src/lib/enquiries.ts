@@ -22,6 +22,23 @@ export type Enquiry = {
   mode: string;
   message: string;
   page: string;
+  /*
+   * Where the visitor came from (migration 0016). Optional: absent before the
+   * migration has run, and '' on enquiries received before tracking began.
+   */
+  /** The most recent visit that had a source — see CHANNEL_LABEL. */
+  channel?: string;
+  /** The visit that introduced them. */
+  first_channel?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+  gclid?: string;
+  fbclid?: string;
+  referrer?: string;
+  landing_page?: string;
 };
 
 export const FORM_LABEL: Record<EnquiryForm, string> = {
@@ -32,6 +49,24 @@ export const FORM_LABEL: Record<EnquiryForm, string> = {
   masterclass: "Masterclass (paid)",
   other: "Other",
 };
+
+/** The website's channel keys (lib/attribution.ts there), in filter order. */
+export const CHANNEL_LABEL: Record<string, string> = {
+  google_ads: "Google Ads",
+  google_search: "Google search",
+  meta_ads: "Meta Ads",
+  meta: "Facebook / Instagram",
+  direct: "Direct",
+  other_search: "Other search engine",
+  linkedin: "LinkedIn",
+  youtube: "YouTube",
+  email: "Email",
+  campaign: "Other campaign",
+  referral: "Other website",
+};
+
+/** "Not recorded" for enquiries from before tracking; an unknown key as itself. */
+export const channelLabel = (key: string | undefined) => (key ? CHANNEL_LABEL[key] ?? key : "Not recorded");
 
 /** PostgREST caps a response at 1,000 rows; page until a short page arrives. */
 const PAGE = 1000;
@@ -100,6 +135,17 @@ const COLUMNS: { head: string; get: (e: Enquiry) => string }[] = [
   { head: "Preferred mode", get: (e) => e.mode },
   { head: "Message", get: (e) => e.message },
   { head: "Page", get: (e) => e.page },
+  { head: "Source", get: (e) => channelLabel(e.channel) },
+  { head: "First source", get: (e) => (e.first_channel ? channelLabel(e.first_channel) : "") },
+  { head: "Campaign", get: (e) => e.utm_campaign ?? "" },
+  { head: "UTM source", get: (e) => e.utm_source ?? "" },
+  { head: "UTM medium", get: (e) => e.utm_medium ?? "" },
+  { head: "Keyword / term", get: (e) => e.utm_term ?? "" },
+  { head: "Ad content", get: (e) => e.utm_content ?? "" },
+  { head: "Referrer", get: (e) => e.referrer ?? "" },
+  { head: "Landing page", get: (e) => e.landing_page ?? "" },
+  { head: "Google click id", get: (e) => e.gclid ?? "" },
+  { head: "Meta click id", get: (e) => e.fbclid ?? "" },
 ];
 
 export function toCsv(rows: Enquiry[]): string {

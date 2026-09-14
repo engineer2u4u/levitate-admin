@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  CHANNEL_LABEL,
   FORM_LABEL,
+  channelLabel,
   deleteEnquiry,
   downloadCsv,
   listEnquiries,
@@ -16,7 +18,14 @@ const SANS = "'Plus Jakarta Sans',sans-serif";
 // min-content width, so a single long unbroken line — a payment note, a long
 // email — would widen its own column and crush all the others. Cells clip
 // instead; the row opens a dialog with the full text.
-const GRID = "minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1.6fr) minmax(0,0.9fr)";
+const GRID = "minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1.6fr) minmax(0,0.9fr) minmax(0,1fr)";
+
+/** Paid clicks stand out; everything else reads as plain. */
+const channelTone = (key: string | undefined): "good" | "neutral" =>
+  key === "google_ads" || key === "meta_ads" ? "good" : "neutral";
+
+/** The filter's value for enquiries from before tracking began. */
+const NOT_RECORDED = "__none";
 const cell = { minWidth: 0 } as const;
 const clip = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } as const;
 
@@ -56,6 +65,7 @@ export default function EnquiriesView() {
   const [q, setQ] = useState("");
   const [form, setForm] = useState<EnquiryForm | "all">("all");
   const [programme, setProgramme] = useState("all");
+  const [source, setSource] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
@@ -74,11 +84,20 @@ export default function EnquiriesView() {
     [rows],
   );
 
+  // Likewise only the sources that occur, in the site's own order.
+  const sources = useMemo(() => {
+    const seen = new Set(rows.map((r) => r.channel || NOT_RECORDED));
+    const known = Object.keys(CHANNEL_LABEL).filter((k) => seen.has(k));
+    const unknown = [...seen].filter((k) => k !== NOT_RECORDED && !(k in CHANNEL_LABEL));
+    return [...known, ...unknown, ...(seen.has(NOT_RECORDED) ? [NOT_RECORDED] : [])];
+  }, [rows]);
+
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return rows.filter((r) => {
       if (form !== "all" && r.form !== form) return false;
       if (programme !== "all" && r.intent !== programme) return false;
+      if (source !== "all" && (r.channel || NOT_RECORDED) !== source) return false;
       const day = localDay(r.created_at);
       if (from && day < from) return false;
       if (to && day > to) return false;
@@ -88,10 +107,10 @@ export default function EnquiriesView() {
       }
       return true;
     });
-  }, [rows, q, form, programme, from, to]);
+  }, [rows, q, form, programme, source, from, to]);
 
-  const filtered = q || form !== "all" || programme !== "all" || from || to;
-  const clear = () => { setQ(""); setForm("all"); setProgramme("all"); setFrom(""); setTo(""); };
+  const filtered = q || form !== "all" || programme !== "all" || source !== "all" || from || to;
+  const clear = () => { setQ(""); setForm("all"); setProgramme("all"); setSource("all"); setFrom(""); setTo(""); };
 
   const exportCsv = () => {
     const stamp = new Date().toISOString().slice(0, 10);
@@ -133,7 +152,7 @@ export default function EnquiriesView() {
     <>
       {/* ---------------------------------------------------------- filters */}
       <div style={{ ...card, padding: 16, marginBottom: 14 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.4fr 1fr 1fr", gap: 12, alignItems: "end" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.4fr 1.1fr 1fr 1fr", gap: 12, alignItems: "end" }}>
           <div>
             <div style={label}>Search</div>
             <input
@@ -158,6 +177,15 @@ export default function EnquiriesView() {
               <option value="all">All programmes</option>
               {programmes.map((p) => (
                 <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={label}>Source</div>
+            <select value={source} onChange={(e) => setSource(e.target.value)} style={{ ...input, cursor: "pointer" }}>
+              <option value="all">All sources</option>
+              {sources.map((s) => (
+                <option key={s} value={s}>{s === NOT_RECORDED ? "Not recorded" : channelLabel(s)}</option>
               ))}
             </select>
           </div>
@@ -208,6 +236,7 @@ export default function EnquiriesView() {
           <div style={{ ...th, ...cell }}>Contact</div>
           <div style={{ ...th, ...cell }}>Programme</div>
           <div style={{ ...th, ...cell }}>Form</div>
+          <div style={{ ...th, ...cell }}>Source</div>
         </div>
 
         {shown.length === 0 ? (
@@ -252,6 +281,16 @@ export default function EnquiriesView() {
                 )}
               </div>
               <div style={{ ...cell, justifySelf: "start" }}><Pill tone={FORM_TONE[r.form] ?? "neutral"}>{FORM_LABEL[r.form] ?? r.form}</Pill></div>
+              <div style={cell}>
+                {r.channel ? (
+                  <>
+                    <div><Pill tone={channelTone(r.channel)}>{channelLabel(r.channel)}</Pill></div>
+                    {r.utm_campaign && <div style={{ ...clip, font: `500 11px ${SANS}`, color: "#8296a9", marginTop: 4 }}>{r.utm_campaign}</div>}
+                  </>
+                ) : (
+                  <span style={{ font: `500 12px ${SANS}`, color: "#a9b8c6" }}>—</span>
+                )}
+              </div>
             </button>
           ))
         )}
@@ -269,6 +308,15 @@ export default function EnquiriesView() {
               ["Participants", open.participants],
               ["Preferred mode", open.mode],
               ["Page", open.page],
+              ["Source", open.channel ? channelLabel(open.channel) : ""],
+              // Only when it differs — otherwise it repeats the line above.
+              ["First source", open.first_channel && open.first_channel !== open.channel ? channelLabel(open.first_channel) : ""],
+              ["Campaign", open.utm_campaign ?? ""],
+              ["Keyword / term", open.utm_term ?? ""],
+              ["Ad content", open.utm_content ?? ""],
+              ["UTM source / medium", [open.utm_source, open.utm_medium].filter(Boolean).join(" / ")],
+              ["Came from", open.referrer ?? ""],
+              ["Landed on", open.landing_page ?? ""],
             ] as const).filter(([, v]) => v).map(([k, v]) => (
               <div key={k} style={{ display: "contents" }}>
                 <dt style={{ ...label, marginBottom: 0, paddingTop: 2 }}>{k}</dt>
