@@ -17,7 +17,7 @@ export default function CoursesView() {
   const status = useCatalogStatus();
   const toast = useToast();
   const canWrite = useCanWrite();
-  const [editing, setEditing] = useState<Course | "new" | null>(null);
+  const [editing, setEditing] = useState<Course | null>(null);
   const [sessionFor, setSessionFor] = useState<string | null>(null);
 
   const tone = (s: Course["status"]) => (s === "live" ? "good" : s === "draft" ? "neutral" : "bad");
@@ -42,7 +42,6 @@ export default function CoursesView() {
         <div style={{ font: "500 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>
           {data.courses.length} course{data.courses.length === 1 ? "" : "s"} · {data.sessions.length} scheduled session{data.sessions.length === 1 ? "" : "s"}
         </div>
-        {canWrite && <button type="button" className="btn btn-dark" onClick={() => setEditing("new")}>+ New course</button>}
       </div>
 
       {data.courses.length === 0 && status.state !== "ready" ? (
@@ -50,10 +49,7 @@ export default function CoursesView() {
       ) : data.courses.length === 0 ? (
         <EmptyState
           title="No courses yet"
-          body={canWrite
-            ? "A course holds the title, fee and duration. Sessions are the dates you run it on, and enrolments hang off those."
-            : "Nothing has been added to the catalogue yet. An admin creates courses; you will see them here once they do."}
-          action={canWrite ? <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}>Create the first course</button> : undefined}
+          body="The catalogue is the website's, added to the database rather than typed in here. Once a course is in it, this screen edits its start, syllabus, status and brochure."
         />
       ) : (
         <div className="course-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12 }}>
@@ -129,9 +125,7 @@ export default function CoursesView() {
         </div>
       )}
 
-      {editing && (
-        <CourseModal course={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />
-      )}
+      {editing && <CourseModal course={editing} onClose={() => setEditing(null)} />}
       {sessionFor && <SessionModal courseId={sessionFor} onClose={() => setSessionFor(null)} />}
     </div>
   );

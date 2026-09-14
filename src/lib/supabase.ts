@@ -84,7 +84,8 @@ export type CourseRow = {
   id: string; slug: string; title: string; category: string; description: string;
   duration: string; price_paise: number; status: "draft" | "live" | "archived";
   tenure: string; facilitator_id: string; live_session_count: number;
-  live_session_schedule: string; banner_url: string; modules: Module[] | null;
+  live_session_schedule: string; banner_url: string; brochure_url: string;
+  modules: Module[] | null;
   short: string; tag: string; mode: string; site_status: "enrolling" | "waitlist";
   hidden: boolean; price_on_request: boolean; price_note: string;
   list_price_paise: number | null; modules_label: string; hours_label: string;
@@ -111,26 +112,6 @@ export type EnrolmentRow = {
   paid: boolean; created_at: string;
 };
 
-/**
- * A URL-safe slug for a course title. Courses are addressed by slug on the
- * learner site, so the admin has to mint one on create.
- */
-export function slugify(title: string) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || "course";
-}
-
-/** `slugify`, made unique against the slugs already taken: "posh-trainer-2". */
-export function uniqueSlug(title: string, taken: Iterable<string>) {
-  const used = new Set(taken);
-  const base = slugify(title);
-  if (!used.has(base)) return base;
-  for (let n = 2; ; n++) if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
-}
-
 export function courseFromRow(r: CourseRow): Course {
   const b = r.batch ?? {};
   return {
@@ -147,6 +128,7 @@ export function courseFromRow(r: CourseRow): Course {
     liveSessionCount: r.live_session_count ?? 0,
     liveSessionSchedule: r.live_session_schedule ?? "",
     bannerUrl: r.banner_url ?? "",
+    brochureUrl: r.brochure_url ?? "",
     // Only the course form writes this, but a hand edit in the dashboard could
     // leave it any shape at all, and every screen that counts modules would
     // throw on the first render.
@@ -197,6 +179,7 @@ export function courseToRow(c: CourseInput): CourseWrite {
     live_session_count: c.liveSessionCount,
     live_session_schedule: c.liveSessionSchedule,
     banner_url: c.bannerUrl,
+    brochure_url: c.brochureUrl,
     modules: c.modules,
     short: c.short,
     tag: c.tag,
@@ -230,7 +213,8 @@ const COURSE_COLUMN: { [K in keyof CourseInput]: keyof CourseWrite } = {
   title: "title", category: "category", description: "description", duration: "duration",
   pricePaise: "price_paise", status: "status", tenure: "tenure", facilitatorId: "facilitator_id",
   liveSessionCount: "live_session_count", liveSessionSchedule: "live_session_schedule",
-  bannerUrl: "banner_url", modules: "modules", short: "short", tag: "tag", mode: "mode",
+  bannerUrl: "banner_url", brochureUrl: "brochure_url", modules: "modules",
+  short: "short", tag: "tag", mode: "mode",
   siteStatus: "site_status", hidden: "hidden", priceOnRequest: "price_on_request",
   priceNote: "price_note", listPricePaise: "list_price_paise", modulesLabel: "modules_label",
   hoursLabel: "hours_label", facilitatorName: "facilitator_name", image: "image",

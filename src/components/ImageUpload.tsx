@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { deleteImage, uploadImage } from "@/lib/storage";
+import { deleteUpload, uploadImage } from "@/lib/storage";
 
 type Size = { w: number; h: number; label: string };
 
@@ -44,14 +44,14 @@ export default function ImageUpload({
       return;
     }
     onChange(res.url);
-    if (previous) void deleteImage(previous);
+    if (previous) void deleteUpload(previous);
   };
 
   const clear = () => {
     const previous = value;
     onChange("");
     setError("");
-    if (previous) void deleteImage(previous);
+    if (previous) void deleteUpload(previous);
   };
 
   return (

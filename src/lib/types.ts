@@ -2,30 +2,6 @@
 
 export type CourseStatus = "live" | "draft" | "archived";
 
-/**
- * The catalogue's categories, fixed rather than free text.
- *
- * Typed twice, a course lands in two groups on the learner site and neither
- * looks complete. Adding one here is a deliberate act; adding one by typo is
- * not possible.
- */
-export const CATEGORIES = [
-  // PoSH in the brand's casing. The website groups by the exact string, so
-  // these match the rows the catalogue was seeded with (migration 0009).
-  "PoSH · Train-the-Trainer",
-  "POCSO · Train-the-Trainer",
-  "DEI · Train-the-Trainer",
-  "Wellbeing · Train-the-Trainer",
-  "Leadership · Train-the-Trainer",
-  "Institutional",
-  "Masterclass",
-  "Demo",
-  "Compliance · Workshop",
-  "Leadership · Workshop",
-] as const;
-
-export type Category = (typeof CATEGORIES)[number];
-
 /* ------------------------------- lessons ------------------------------- */
 
 export type LessonKind = "reading" | "video" | "resource";
@@ -211,6 +187,9 @@ export type Course = {
   description: string;
   /** Catalogue banner. Uploaded to Supabase Storage; empty until one is set. */
   bannerUrl: string;
+  /** The brochure a visitor downloads. A PDF in the course-media bucket, or
+   *  empty where the course has none. */
+  brochureUrl: string;
   modules: Module[];
   status: CourseStatus;
   /**
@@ -371,3 +350,64 @@ export const emptyBatch = (): CourseBatch => ({
   feeNote: "",
   cta: "",
 });
+
+/**
+ * The course's "15 modules" label, with the number brought up to date.
+ *
+ * The label is the website's copy and the form does not edit it, but the form
+ * does change how many modules there are — so a card can end up claiming 15
+ * over a syllabus of 16. Only a number already in the label is rewritten:
+ * "Curriculum on request" says something true about a course with no syllabus
+ * yet, and turning it into "0 modules" would not.
+ */
+export function modulesLabelFor(label: string, count: number) {
+  return /[0-9]+/.test(label) ? label.replace(/[0-9]+/, String(count)) : label;
+}
+
+/* ------------------------------ batch cards ----------------------------- */
+
+/**
+ * The course's card on the website's Upcoming Batches list, worked out from
+ * the course itself.
+ *
+ * Publishing a course is the whole instruction: set it live and it appears on
+ * that list, with its own details, rather than being live on the site and
+ * missing from the batches page because a separate tickbox was never found.
+ *
+ * Three fields always follow the course, because they state what it is doing
+ * and an admin can change that here: whether it is listed at all, the status
+ * it shows, and what its button says. The rest is card copy — kept wherever
+ * someone has written it, and filled in from the course where they have not.
+ */
+export function batchCardFor(
+  c: Pick<Course, "title" | "short" | "category" | "status" | "siteStatus" | "hidden" | "mode" | "duration" | "tenure" | "liveSessionSchedule" | "priceOnRequest" | "modules"> & { batch: CourseBatch },
+): CourseBatch {
+  const b = c.batch;
+  const enrolling = c.siteStatus === "enrolling";
+  const name = c.short.trim() || c.title.trim();
+
+  // Written where someone has written it; worked out where they have not.
+  const rows = b.rows.length
+    ? b.rows
+    : ([
+        // The website fills {starts} from the first dated session, falling
+        // back to the course's own start.
+        { k: enrolling ? "Batch starts" : "Batch month", v: "{starts}" },
+        { k: "Duration", v: c.tenure.trim() || c.duration.trim() },
+        { k: "Curriculum", v: c.modules.length ? `${c.modules.length} module${c.modules.length === 1 ? "" : "s"}` : "" },
+        { k: "Timing", v: c.liveSessionSchedule.trim() },
+        { k: "Mode", v: c.mode.trim() },
+      ] as BatchRow[]).filter((r) => r.v);
+
+  return {
+    // Hidden courses are deliberately off every public list, this one included.
+    show: c.status === "live" && !c.hidden,
+    statusLabel: enrolling ? "Enrolling" : "Dates coming soon",
+    cta: enrolling ? "Enrol for this batch" : "Join the waitlist",
+    tag: b.tag.trim() || name || c.category.trim(),
+    title: b.title.trim() || name,
+    short: b.short.trim() || name,
+    rows,
+    feeNote: b.feeNote.trim() || (c.priceOnRequest ? "confirmed with batch dates" : "inclusive of taxes"),
+  };
+}

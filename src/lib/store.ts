@@ -11,15 +11,12 @@ import type {
   SessionInput,
 } from "./types";
 import { DEFAULT_CERTIFICATE } from "./certificate";
-import { SEED } from "./seed";
 import {
   courseFromRow,
   coursePatchToRow,
-  courseToRow,
   getClient,
   sessionFromRow,
   sessionToRow,
-  uniqueSlug,
   type CourseRow,
   type SessionRow,
 } from "./supabase";
@@ -47,6 +44,16 @@ export const subscribe = (cb: () => void) => {
 };
 
 export const EMPTY: AdminData = { certificate: DEFAULT_CERTIFICATE, facilitators: [], courses: [], sessions: [], enrolments: [] };
+
+/**
+ * What a browser starts with: the certificate defaults and nothing else.
+ *
+ * It used to start with invented facilitators and enrolments, so the screens
+ * would not look empty on a first run. They made the Courses screen quote
+ * enrolment counts and fees collected that no customer had ever paid, which is
+ * worse than an empty screen — the empty states say what to do next.
+ */
+const BLANK = (): LocalData => ({ certificate: DEFAULT_CERTIFICATE, facilitators: [], enrolments: [] });
 
 /** Where the database half stands. `idle` means nobody has asked yet. */
 export type CatalogStatus = { state: "idle" | "loading" | "ready" | "error"; error: string };
@@ -103,13 +110,22 @@ type Stored = Partial<LocalData> & {
   legacySessions?: LegacySession[];
 };
 
-/** Fills in fields added after a browser last wrote its data. */
+/**
+ * The ids of the records earlier versions seeded into every browser — five
+ * invented enrolments and two facilitators. Dropped on read wherever they are
+ * still stored, so what these screens count is this business's own. Generated
+ * ids carry a timestamp and random tail, so nothing real can collide.
+ */
+const DEMO_IDS = new Set(["e_1", "e_2", "e_3", "e_4", "e_5", "f_parichita", "f_faculty"]);
+
+/** Fills in fields added after a browser last wrote its data, and takes out
+ *  the demo records it may have been given on a first run. */
 function normalise(data: Stored): LocalData {
   return {
     // Settings gained fields over time; anything absent takes the default.
     certificate: { ...DEFAULT_CERTIFICATE, ...(data.certificate ?? {}) },
-    facilitators: data.facilitators ?? [],
-    enrolments: data.enrolments ?? [],
+    facilitators: (data.facilitators ?? []).filter((f) => !DEMO_IDS.has(f.id)),
+    enrolments: (data.enrolments ?? []).filter((e) => !DEMO_IDS.has(e.id)),
   };
 }
 
@@ -120,19 +136,24 @@ function readLocal(): LocalData {
     if (raw) {
       const stored = JSON.parse(raw) as Stored;
       local = normalise(stored);
+      const demo =
+        local.facilitators.length !== (stored.facilitators?.length ?? 0) ||
+        local.enrolments.length !== (stored.enrolments?.length ?? 0);
       // A browser from before the move still holds its own courses and
       // sessions. The courses are ignored — the database has them — but the
       // session dates are kept until enrolments booked on them are re-pointed.
       const hints = stored.legacySessions ?? (stored.sessions ?? []).map(({ id, courseId, date }) => ({ id, courseId, date }));
       legacySessions = hints.length ? hints : null;
-      // Rewrite straight away, so the old copy of the catalogue is gone.
-      if (stored.courses || stored.sessions) persist();
+      // Rewrite straight away, so the old copy of the catalogue — and any
+      // demo record just dropped — is gone rather than dropped again on
+      // every read.
+      if (stored.courses || stored.sessions || demo) persist();
     } else {
-      local = SEED;
+      local = BLANK();
       persist();
     }
   } catch {
-    local = SEED;
+    local = BLANK();
   }
   return local;
 }
@@ -391,23 +412,12 @@ export const coursesFor = (d: AdminData, facilitatorId: string) =>
 
 /** The web address a new course with this title would get — unique among
  *  every course, drafts and archived ones included. */
-export const nextSlug = (title: string) => uniqueSlug(title, catalog.courses.map((c) => c.slug));
-
-export async function createCourse(input: CourseInput): Promise<SaveResult> {
-  const course: Course = { ...input, id: uuid(), slug: nextSlug(input.title), createdAt: new Date().toISOString() };
-  setCatalog({ ...catalog, courses: [...catalog.courses, course] });
-
-  const res = await run<CourseRow>((db) =>
-    db.from("courses").insert({ id: course.id, slug: course.slug, ...courseToRow(course) }).select().single(),
-  );
-  if (!res.ok) {
-    setCatalog({ ...catalog, courses: catalog.courses.filter((c) => c.id !== course.id) });
-    return res;
-  }
-  // The database's copy carries the timestamps it set.
-  putCourse(courseFromRow(res.data));
-  return { ok: true };
-}
+/*
+ * There is no createCourse. A course carries the website's own copy — its
+ * slug, its card text, its imagery — and a slug is permanent once anyone has
+ * shared a link to it. Adding one is a migration, reviewed like the rest of
+ * the catalogue; the admin edits what changes between batches.
+ */
 
 export async function updateCourse(courseId: string, patch: Partial<CourseInput>): Promise<SaveResult> {
   const before = catalog.courses.find((c) => c.id === courseId);
@@ -552,10 +562,11 @@ export function effectiveStatus(d: AdminData, session: Session): SessionStatusLa
 export type SessionStatusLabel = "Open" | "Filling" | "Full" | "Draft" | "Closed";
 
 /**
- * Resets this browser's own records to the demo seed. Courses and sessions
- * belong to the database — and to the website — so a reset never touches them.
+ * Empties this browser's own records — facilitators, enrolments and the
+ * certificate settings. Courses and sessions belong to the database, and to
+ * the website, so a reset never touches them.
  */
 export function resetAll() {
-  writeLocal(SEED);
+  writeLocal(BLANK());
   if (status.state === "ready") repointLegacy();
 }

@@ -7,7 +7,8 @@ const BUCKET = "course-media";
  *  is uploaded rather than after. */
 export const MAX_BYTES = 5 * 1024 * 1024;
 
-const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"];
+const IMAGES = ["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"];
+const DOCUMENTS = ["application/pdf"];
 
 export type UploadResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -19,12 +20,25 @@ export type UploadResult = { ok: true; url: string } | { ok: false; error: strin
  * randomised rather than taken from the file, because two people uploading
  * `banner.jpg` must not overwrite each other.
  */
-export async function uploadImage(file: File, folder: string): Promise<UploadResult> {
+export function uploadImage(file: File, folder: string): Promise<UploadResult> {
+  return put(file, folder, IMAGES, "Use a JPEG, PNG, WebP, AVIF or GIF.");
+}
+
+/**
+ * Puts a course brochure in the same bucket. It is catalogue media like a
+ * banner — public to read, admin to write — so it needs no bucket of its own,
+ * only the PDF type that migration 0010 adds.
+ */
+export function uploadBrochure(file: File, folder: string): Promise<UploadResult> {
+  return put(file, folder, DOCUMENTS, "A brochure has to be a PDF.");
+}
+
+async function put(file: File, folder: string, allowed: string[], wrongType: string): Promise<UploadResult> {
   if (!supabaseConfigured) {
-    return { ok: false, error: "Supabase is not configured, so images cannot be uploaded." };
+    return { ok: false, error: "Supabase is not configured, so nothing can be uploaded." };
   }
-  if (!ALLOWED.includes(file.type)) {
-    return { ok: false, error: "Use a JPEG, PNG, WebP, AVIF or GIF." };
+  if (!allowed.includes(file.type)) {
+    return { ok: false, error: wrongType };
   }
   if (file.size > MAX_BYTES) {
     return { ok: false, error: `That file is ${mb(file.size)} MB. The limit is 5 MB — export it smaller.` };
@@ -44,8 +58,11 @@ export async function uploadImage(file: File, folder: string): Promise<UploadRes
     if (/bucket not found/i.test(error.message)) {
       return { ok: false, error: "The course-media bucket is missing — run migration 0003 in Supabase." };
     }
+    if (/mime type|not supported/i.test(error.message)) {
+      return { ok: false, error: "The bucket refuses that file type — run migration 0010 in Supabase." };
+    }
     if (/row-level security|unauthorized|403/i.test(error.message)) {
-      return { ok: false, error: "Only an admin can upload images." };
+      return { ok: false, error: "Only an admin can upload files." };
     }
     return { ok: false, error: error.message };
   }
@@ -55,12 +72,12 @@ export async function uploadImage(file: File, folder: string): Promise<UploadRes
 }
 
 /**
- * Removes an image previously uploaded here.
+ * Removes a file previously uploaded here.
  *
  * Best-effort: a course still saves if the old file cannot be cleaned up, and
  * a stray object is a smaller problem than a failed save.
  */
-export async function deleteImage(url: string): Promise<void> {
+export async function deleteUpload(url: string): Promise<void> {
   if (!supabaseConfigured || !url) return;
   const marker = `/${BUCKET}/`;
   const at = url.indexOf(marker);

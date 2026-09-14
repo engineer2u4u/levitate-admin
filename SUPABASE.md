@@ -19,10 +19,20 @@ Open **SQL Editor** and run each file in `supabase/migrations/` in order:
 | `0001_init.sql` | `profiles`, `courses`, `sessions`, `enrolments`, the `session_occupancy` view, and the RLS policies |
 | `0002_admin_access.sql` | The `viewer` role and `admin_invites`; also closes a hole in `0001` that let an account write its own `role` |
 | `0003_course_media.sql` | The `course-media` storage bucket for banners, module covers and lesson images — public-read, admin-write |
+| `0004_course_progress.sql` | Per-learner lesson and quiz progress, behind the Learner progress screen |
+| `0005_enquiries.sql` | `enquiries` — everything the website's forms collect |
+| `0006_masterclass_registrations.sql` | Paid masterclass registrations, and the enquiry rows they appear as |
+| `0007_admin_courses_in_db.sql` | Moves courses and sessions out of the admin's browser and into the database |
+| `0008_website_catalog.sql` | The columns the public website prints, and the column-level grants that keep the rest private |
+| `0009_seed_catalog.sql` | The catalogue itself — the courses and sessions the site launched with |
+| `0010_course_brochure.sql` | `courses.brochure_url`, and PDFs in the `course-media` bucket |
+| `0011_course_modules.sql` | The real syllabus for the three courses that publish one — PoSH (15), POCSO (8) and DEI (13) |
+| `0012_drop_demo_course.sql` | Deletes the demo course, its sessions, its test enrolments and its progress rows |
 
-All three are written to be re-runnable, so running one twice is safe. Without
-`0003`, image uploads in the course editor fail with *"the course-media bucket
-is missing"*.
+Every file is written to be re-runnable, so running one twice is safe. Without
+`0003`, image uploads fail with *"the course-media bucket is missing"*; without
+`0010`, saving a course fails outright, because the form writes `brochure_url`
+on every save.
 
 ## 3. Wire the keys
 
