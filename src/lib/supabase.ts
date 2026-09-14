@@ -1,6 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BASE_PATH } from "./basePath";
-import type { Course, CourseInput, Module, Session, SessionInput } from "./types";
+import type {
+  Batch,
+  BatchInput,
+  Course,
+  CourseInput,
+  Enrolment,
+  EnrolmentInput,
+  Module,
+  Session,
+  SessionInput,
+  SessionLink,
+} from "./types";
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -94,23 +105,46 @@ export type CourseRow = {
 };
 
 export type SessionRow = {
-  id: string; course_id: string; starts_on: string | null; date_label: string;
+  id: string; course_id: string; batch_id: string; starts_on: string | null; date_label: string;
   time_label: string; mode: string; trainer: string; seats: number;
   status: "draft" | "open" | "closed"; topic: string;
   starts_at: string | null; ends_at: string | null; created_at: string;
+};
+
+export type BatchDbRow = {
+  id: string; course_id: string; name: string; code: string;
+  starts_on: string | null; ends_on: string | null;
+  status: Batch["status"]; enrolment_open: boolean; seats: number;
+  completed_at: string | null; created_at: string; updated_at: string;
+};
+
+export type SessionLinkRow = {
+  session_id: string; join_url: string; meeting_id: string; passcode: string; recording_url: string;
+};
+
+export type ModuleUnlockRow = {
+  batch_id: string; module_id: string; unlocked_at: string; after_session_id: string | null;
+};
+
+export type EnrolmentRow = {
+  id: string; user_id: string | null; claim_code: string | null; name: string; email: string; phone: string;
+  course_id: string; batch_id: string; source: Enrolment["source"];
+  amount_paise: number; seats: number; method: Enrolment["method"];
+  status: Enrolment["status"]; payment_link: string;
+  paid_at: string | null; cancelled_at: string | null; linked_at: string | null;
+  completed_at: string | null; certificate_sent_at: string | null; toolkit_sent_at: string | null;
+  notes: string; created_at: string;
 };
 
 /** What the admin writes: every column but the ones the database owns. The
  *  slug is written once, on insert, and is not part of an update. */
 export type CourseWrite = Omit<CourseRow, "id" | "slug" | "created_at" | "updated_at">;
 export type SessionWrite = Omit<SessionRow, "id" | "created_at">;
-
-export type EnrolmentRow = {
-  id: string; user_id: string | null; name: string; email: string; phone: string;
-  course_id: string; session_id: string; source: "Phone" | "Website" | "Corporate";
-  amount_paise: number; seats: number; method: "link" | "invoice" | "paid";
-  paid: boolean; created_at: string;
-};
+export type BatchWrite = Omit<BatchDbRow, "id" | "completed_at" | "created_at" | "updated_at">;
+export type EnrolmentWrite = Pick<
+  EnrolmentRow,
+  "name" | "email" | "phone" | "batch_id" | "course_id" | "source" | "amount_paise" | "seats" | "method" | "status" | "payment_link" | "notes"
+>;
 
 export function courseFromRow(r: CourseRow): Course {
   const b = r.batch ?? {};
@@ -239,6 +273,7 @@ export function sessionFromRow(r: SessionRow): Session {
   return {
     id: r.id,
     courseId: r.course_id,
+    batchId: r.batch_id,
     startsOn: r.starts_on ?? null,
     date: r.date_label ?? "",
     time: r.time_label ?? "",
@@ -256,6 +291,7 @@ export function sessionFromRow(r: SessionRow): Session {
 export function sessionToRow(s: SessionInput): SessionWrite {
   return {
     course_id: s.courseId,
+    batch_id: s.batchId,
     starts_on: s.startsOn,
     date_label: s.date,
     time_label: s.time,
@@ -267,5 +303,99 @@ export function sessionToRow(s: SessionInput): SessionWrite {
     topic: s.topic,
     starts_at: s.startsAt,
     ends_at: s.endsAt,
+  };
+}
+
+export function batchFromRow(r: BatchDbRow): Batch {
+  return {
+    id: r.id,
+    courseId: r.course_id,
+    name: r.name,
+    code: r.code ?? "",
+    startsOn: r.starts_on ?? null,
+    endsOn: r.ends_on ?? null,
+    status: r.status,
+    enrolmentOpen: r.enrolment_open ?? true,
+    seats: r.seats,
+    completedAt: r.completed_at ?? null,
+    createdAt: r.created_at,
+  };
+}
+
+export function batchToRow(b: BatchInput): BatchWrite {
+  return {
+    course_id: b.courseId,
+    name: b.name,
+    code: b.code,
+    starts_on: b.startsOn,
+    ends_on: b.endsOn,
+    status: b.status,
+    enrolment_open: b.enrolmentOpen,
+    seats: b.seats,
+  };
+}
+
+export function sessionLinkFromRow(r: SessionLinkRow): SessionLink {
+  return {
+    sessionId: r.session_id,
+    joinUrl: r.join_url ?? "",
+    meetingId: r.meeting_id ?? "",
+    passcode: r.passcode ?? "",
+    recordingUrl: r.recording_url ?? "",
+  };
+}
+
+export function sessionLinkToRow(l: SessionLink): SessionLinkRow {
+  return {
+    session_id: l.sessionId,
+    join_url: l.joinUrl,
+    meeting_id: l.meetingId,
+    passcode: l.passcode,
+    recording_url: l.recordingUrl,
+  };
+}
+
+export function enrolmentFromRow(r: EnrolmentRow): Enrolment {
+  return {
+    id: r.id,
+    userId: r.user_id ?? null,
+    // Absent until migration 0017 has run.
+    claimCode: r.claim_code ?? "",
+    name: r.name,
+    email: r.email ?? "",
+    phone: r.phone ?? "",
+    courseId: r.course_id,
+    batchId: r.batch_id,
+    source: r.source,
+    amountPaise: r.amount_paise ?? 0,
+    seats: r.seats ?? 1,
+    method: r.method,
+    status: r.status,
+    paymentLink: r.payment_link ?? "",
+    paidAt: r.paid_at ?? null,
+    cancelledAt: r.cancelled_at ?? null,
+    linkedAt: r.linked_at ?? null,
+    completedAt: r.completed_at ?? null,
+    certificateSentAt: r.certificate_sent_at ?? null,
+    toolkitSentAt: r.toolkit_sent_at ?? null,
+    notes: r.notes ?? "",
+    createdAt: r.created_at,
+  };
+}
+
+export function enrolmentToRow(e: EnrolmentInput): EnrolmentWrite {
+  return {
+    name: e.name,
+    email: e.email,
+    phone: e.phone,
+    batch_id: e.batchId,
+    course_id: e.courseId,
+    source: e.source,
+    amount_paise: e.amountPaise,
+    seats: e.seats,
+    method: e.method,
+    status: e.status,
+    payment_link: e.paymentLink,
+    notes: e.notes,
   };
 }

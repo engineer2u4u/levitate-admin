@@ -5,6 +5,7 @@ import { updateCourse } from "@/lib/store";
 import {
   batchCardFor,
   emptyModule,
+  modulesFromWebsite,
   modulesLabelFor,
   type Course,
   type CourseInput,
@@ -52,6 +53,9 @@ export default function CourseModal({ course, onClose }: { course: Course; onClo
   // Full module records, not just their titles: a module carries lessons and a
   // quiz that nothing here edits, and renaming one must not drop them.
   const [modules, setModules] = useState<Module[]>(course.modules);
+  // Modules mirroring lesson content in the website's code keep their ids,
+  // number and order; only their titles are edited here.
+  const locked = modulesFromWebsite(course.modules);
   const [status, setStatus] = useState<CourseStatus>(course.status);
   const [siteStatus, setSiteStatus] = useState<SiteStatus>(course.siteStatus);
   const [brochureUrl, setBrochureUrl] = useState(course.brochureUrl);
@@ -89,8 +93,10 @@ export default function CourseModal({ course, onClose }: { course: Course; onClo
       status,
       siteStatus,
       brochureUrl,
-      // Copy the form does not edit, but whose number it can invalidate.
-      modulesLabel: modulesLabelFor(course.modulesLabel, trimmed.length),
+      // Copy the form does not edit, but whose number it can invalidate — unless
+      // the modules mirror LMS content, whose count ("13") is not the
+      // published syllabus's ("15 modules") and must not overwrite it.
+      modulesLabel: locked ? course.modulesLabel : modulesLabelFor(course.modulesLabel, trimmed.length),
       // Publishing is the whole instruction: the batch card follows from the
       // course rather than being a separate thing to remember.
       batch: batchCardFor({ ...course, status, siteStatus, modules: trimmed }),
@@ -174,12 +180,14 @@ export default function CourseModal({ course, onClose }: { course: Course; onClo
                 Modules
               </div>
               <div style={{ font: "500 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginTop: 4 }}>
-                {modules.length === 0
-                  ? "The syllabus, in the order taught."
-                  : `${modules.length} module${modules.length === 1 ? "" : "s"}, in the order shown.`}
+                {locked
+                  ? `${modules.length} modules, matching the lessons on the LMS. Rename them here; adding, removing or reordering happens in the LMS content.`
+                  : modules.length === 0
+                    ? "The syllabus, in the order taught."
+                    : `${modules.length} module${modules.length === 1 ? "" : "s"}, in the order shown.`}
               </div>
             </div>
-            <button type="button" className="btn btn-soft" onClick={addModule}>+ Add module</button>
+            {!locked && <button type="button" className="btn btn-soft" onClick={addModule}>+ Add module</button>}
           </div>
 
           {errors.modules && <div role="alert" style={alert}>{errors.modules}</div>}
@@ -191,10 +199,12 @@ export default function CourseModal({ course, onClose }: { course: Course; onClo
           ) : (
             modules.map((m, i) => (
               <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: "none" }}>
-                  <button type="button" aria-label="Move up" onClick={() => moveModule(i, i - 1)} disabled={i === 0} style={arrow}>▲</button>
-                  <button type="button" aria-label="Move down" onClick={() => moveModule(i, i + 1)} disabled={i === modules.length - 1} style={arrow}>▼</button>
-                </div>
+                {!locked && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: "none" }}>
+                    <button type="button" aria-label="Move up" onClick={() => moveModule(i, i - 1)} disabled={i === 0} style={arrow}>▲</button>
+                    <button type="button" aria-label="Move down" onClick={() => moveModule(i, i + 1)} disabled={i === modules.length - 1} style={arrow}>▼</button>
+                  </div>
+                )}
                 <div aria-hidden style={{ flex: "none", width: 20, textAlign: "right", font: "700 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>
                   {i + 1}.
                 </div>
@@ -205,14 +215,16 @@ export default function CourseModal({ course, onClose }: { course: Course; onClo
                   aria-label={`Module ${i + 1} title`}
                   style={{ ...input, flex: 1, minWidth: 0 }}
                 />
-                <button
-                  type="button"
-                  aria-label={`Remove module ${i + 1}`}
-                  onClick={() => setModules((ms) => ms.filter((x) => x.id !== m.id))}
-                  style={{ flex: "none", cursor: "pointer", border: "none", background: "none", padding: "0 4px", font: "600 16px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", lineHeight: 1 }}
-                >
-                  ×
-                </button>
+                {!locked && (
+                  <button
+                    type="button"
+                    aria-label={`Remove module ${i + 1}`}
+                    onClick={() => setModules((ms) => ms.filter((x) => x.id !== m.id))}
+                    style={{ flex: "none", cursor: "pointer", border: "none", background: "none", padding: "0 4px", font: "600 16px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", lineHeight: 1 }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             ))
           )}

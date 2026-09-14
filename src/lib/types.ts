@@ -51,7 +51,21 @@ export type Module = {
   lessons: Lesson[];
   /** Null where a module does not warrant one — quizzes are optional. */
   quiz: Quiz | null;
+  /**
+   * The LMS lessons inside this module, by id. Present only where the lesson
+   * content is written in the website's code (PoSH): the ids there and here
+   * have to match, so such a module's id cannot change and the list cannot
+   * gain or lose modules from this screen.
+   */
+  itemIds?: string[];
+  /** "enrolment": open as soon as someone is enrolled. "manual": waits for an
+   *  admin to unlock it for the batch after a live session. */
+  release?: "enrolment" | "manual";
 };
+
+/** True when a course's modules mirror lesson content in the website's code,
+ *  and so can be renamed here but not added, removed or reordered. */
+export const modulesFromWebsite = (modules: Module[]) => modules.some((m) => (m.itemIds?.length ?? 0) > 0);
 
 /* ----------------------------- certificates ----------------------------- */
 
@@ -249,11 +263,48 @@ export const IMAGE_SIZES = {
   certBorder: { w: 2246, h: 1588, label: "2246 × 1588 px (A4 landscape)" },
 } as const;
 
+/* -------------------------------- batches ------------------------------- */
+
+export type BatchStatus = "upcoming" | "running" | "completed" | "cancelled";
+
+/**
+ * One run of a course: the October batch, then the November one. Its own
+ * sessions, seats and learners, and a status that keeps finished runs as
+ * history rather than deleting them.
+ */
+export type Batch = {
+  id: string;
+  courseId: string;
+  /** "October 2026". */
+  name: string;
+  /** "2026-10". Unique within a course when set. */
+  code: string;
+  startsOn: string | null;
+  endsOn: string | null;
+  status: BatchStatus;
+  /** Taking new enrolments — separate from status, so a running batch can
+   *  still take a late joiner. */
+  enrolmentOpen: boolean;
+  seats: number;
+  completedAt: string | null;
+  createdAt: string;
+};
+
+export type BatchInput = Omit<Batch, "id" | "createdAt" | "completedAt">;
+
+export const BATCH_STATUSES: { key: BatchStatus; label: string }[] = [
+  { key: "upcoming", label: "Upcoming" },
+  { key: "running", label: "Running" },
+  { key: "completed", label: "Completed" },
+  { key: "cancelled", label: "Cancelled" },
+];
+
 export type SessionStatus = "open" | "filling" | "full" | "draft" | "closed";
 
 export type Session = {
   id: string;
   courseId: string;
+  batchId: string;
   /** The day it runs, "2026-10-03". What sessions sort by, and what `date`
    *  is generated from. Null only on a row made without one. */
   startsOn: string | null;
@@ -275,37 +326,107 @@ export type Session = {
   createdAt: string;
 };
 
-export type PaymentMethod = "link" | "invoice" | "paid";
+/** A session's Zoom details. Kept apart from the session because the public
+ *  website reads sessions with the anon key, and these must never be public. */
+export type SessionLink = {
+  sessionId: string;
+  joinUrl: string;
+  meetingId: string;
+  passcode: string;
+  recordingUrl: string;
+};
+
+export type EnrolmentStatus = "pending" | "paid" | "cancelled";
+
+export type PaymentMethod = "razorpay" | "link" | "invoice" | "offline";
 
 export type Enrolment = {
+  id: string;
+  /** The learner's LMS account, once they have claimed this enrolment with
+   *  its code — or bought it while signed in. */
+  userId: string | null;
+  /** "LVT-7K3QXM": sent to the learner, entered once on the LMS to attach
+   *  this enrolment to their account. Blank until the database assigns it. */
+  claimCode: string;
+  name: string;
+  email: string;
+  phone: string;
+  courseId: string;
+  batchId: string;
+  /** Admin: added here. Website: bought on the LMS. */
+  source: "Admin" | "Website" | "Phone" | "Corporate";
+  /** Snapshotted at enrolment: a later price change must not rewrite history. */
+  amountPaise: number;
+  seats: number;
+  method: PaymentMethod;
+  status: EnrolmentStatus;
+  /** The Razorpay payment link pasted in, to forward on WhatsApp or email. */
+  paymentLink: string;
+  paidAt: string | null;
+  cancelledAt: string | null;
+  linkedAt: string | null;
+  completedAt: string | null;
+  certificateSentAt: string | null;
+  toolkitSentAt: string | null;
+  notes: string;
+  createdAt: string;
+};
+
+/** What the enrol form supplies; the database stamps the rest. */
+export type EnrolmentInput = Pick<
+  Enrolment,
+  "name" | "email" | "phone" | "batchId" | "courseId" | "source" | "amountPaise" | "seats" | "method" | "status" | "paymentLink" | "notes"
+>;
+
+/** An enrolment from before they moved to the database, still sitting in
+ *  some browser's storage. Read only, to be downloaded before it is cleared. */
+export type LegacyEnrolment = {
   id: string;
   name: string;
   email: string;
   phone: string;
   courseId: string;
   sessionId: string;
-  /** Where the enrolment came from — phone enquiries are created here. */
-  source: "Phone" | "Website" | "Corporate";
-  /** Snapshotted at enrolment: a later price change must not rewrite history. */
+  source: string;
   amountPaise: number;
-  /** Number of seats, so a corporate booking is one row. */
   seats: number;
-  method: PaymentMethod;
+  method: string;
   paid: boolean;
   createdAt: string;
+};
+
+/** A module opened for everyone in a batch, usually after a live session. */
+export type ModuleUnlock = {
+  batchId: string;
+  moduleId: string;
+  unlockedAt: string;
+  afterSessionId: string | null;
+};
+
+/** One learner's progress through one course, as the LMS records it. */
+export type LearnerProgress = {
+  userId: string;
+  courseSlug: string;
+  completedItems: string[];
+  completedAt: string | null;
+  updatedAt: string;
 };
 
 export type AdminData = {
   certificate: CertificateSettings;
   facilitators: Facilitator[];
   courses: Course[];
+  batches: Batch[];
   sessions: Session[];
+  sessionLinks: SessionLink[];
   enrolments: Enrolment[];
+  moduleUnlocks: ModuleUnlock[];
+  progress: LearnerProgress[];
 };
 
-/** The part of `AdminData` held in this browser. Courses and sessions are
- *  the database's, and never stored locally. */
-export type LocalData = Pick<AdminData, "certificate" | "facilitators" | "enrolments">;
+/** The part of `AdminData` held in this browser. Everything else is the
+ *  database's, and never stored locally. */
+export type LocalData = Pick<AdminData, "certificate" | "facilitators">;
 
 /** A course as the form edits it: everything but what is fixed on creation. */
 export type CourseInput = Omit<Course, "id" | "slug" | "createdAt">;

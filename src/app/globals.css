@@ -108,8 +108,11 @@ input:focus, select:focus, textarea:focus {
   .cert-layout { grid-template-columns: 1fr !important; }
   .table-scroll { overflow-x: auto; }
   .table-scroll > * { min-width: 760px; }
+  /* Filter bars wrap to two columns rather than squeezing six. */
+  .filter-grid { grid-template-columns: 1fr 1fr !important; }
 }
 @media (max-width: 560px) {
   .kpi-grid { grid-template-columns: 1fr !important; }
   .form-2col { grid-template-columns: 1fr !important; }
+  .filter-grid { grid-template-columns: 1fr !important; }
 }

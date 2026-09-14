@@ -15,13 +15,13 @@ export const useToast = () => useContext(ToastCtx);
 
 /* ---------------------- "enrol a customer" ------------------------- */
 
-type EnrolPrefill = { courseId?: string; sessionId?: string } | null;
+type EnrolPrefill = { courseId?: string; batchId?: string } | null;
 const EnrolCtx = createContext<(prefill?: EnrolPrefill) => void>(() => {});
 export const useEnrolDialog = () => useContext(EnrolCtx);
 
 /* --------------------- enrolment payment filter -------------------- */
 
-export const PAYMENT_FILTERS = ["All", "Paid", "Unpaid"] as const;
+export const PAYMENT_FILTERS = ["All", "Paid", "Unpaid", "Cancelled"] as const;
 export type PaymentFilter = (typeof PAYMENT_FILTERS)[number];
 
 /**
@@ -40,7 +40,7 @@ const NAV = [
   { href: "/enquiries", label: "Enquiries" },
   { href: "/enrolments", label: "Enrolments" },
   { href: "/courses", label: "Courses" },
-  { href: "/sessions", label: "Sessions" },
+  { href: "/batches", label: "Batches" },
   { href: "/facilitators", label: "Facilitators" },
   { href: "/certificates", label: "Certificates" },
   // Read live from Supabase, like Users — the learner site writes it, so
@@ -56,7 +56,7 @@ const TITLES: Record<string, [string, string]> = {
   "/enrolments": ["Enrolments", "Who is enrolled, and what they owe"],
   "/progress": ["Learner progress", "How far each learner has got, item by item"],
   "/courses": ["Courses", "Create and maintain the course catalogue"],
-  "/sessions": ["Sessions", "Scheduled dates for each course"],
+  "/batches": ["Batches", "Each run of a course — its dates, sessions and learners, and the ones already finished"],
   "/facilitators": ["Facilitators", "The people who teach, and what they lead"],
   "/certificates": ["Certificates", "Issue one, then print it or send it on"],
   "/users": ["Users", "Who can open this portal, and what they can do"],
@@ -86,7 +86,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
 
   const key = Object.keys(TITLES).find((k) => pathname.startsWith(k)) ?? "/enrolments";
   const [title, sub] = TITLES[key];
-  const unpaid = data.enrolments.filter((e) => !e.paid).length;
+  const unpaid = data.enrolments.filter((e) => e.status === "pending").length;
 
   const toastValue = useMemo(() => showToast, [showToast]);
   const enrolValue = useMemo(() => openEnrol, [openEnrol]);
@@ -112,13 +112,13 @@ export default function AdminShell({ children }: { children: ReactNode }) {
               <nav className="admin-nav" style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 {NAV.map((n) => {
                   const on = pathname.startsWith(n.href);
+                  // No count until the database has answered: a "0" there
+                  // would be a claim, not a placeholder.
                   const badge =
-                    n.href === "/enrolments" ? data.enrolments.length
-                    // No count until the database has answered: a "0" there
-                    // would be a claim, not a placeholder.
+                    n.href === "/enrolments" ? (catalogReady ? data.enrolments.filter((e) => e.status !== "cancelled").length : null)
                     : n.href === "/courses" ? (catalogReady ? data.courses.length : null)
-                    : n.href === "/sessions" ? (catalogReady ? data.sessions.length : null)
-                  : n.href === "/facilitators" ? data.facilitators.length
+                    : n.href === "/batches" ? (catalogReady ? data.batches.filter((b) => b.status === "upcoming" || b.status === "running").length : null)
+                    : n.href === "/facilitators" ? data.facilitators.length
                     : null;
                   return (
                     <Link
@@ -138,8 +138,8 @@ export default function AdminShell({ children }: { children: ReactNode }) {
 
               {canWrite && (
                 <button type="button" onClick={() => openEnrol()} className="admin-cta" style={{ cursor: "pointer", border: "none", textAlign: "left", background: "var(--grad)", borderRadius: 10, padding: "12px 13px" }}>
-                  <div style={{ font: "700 12px 'Plus Jakarta Sans',sans-serif", color: "#fff" }}>+ Enrol a customer</div>
-                  <div style={{ font: "500 10px 'Plus Jakarta Sans',sans-serif", color: "rgba(255,255,255,.8)", marginTop: 3 }}>Phone or email enquiry</div>
+                  <div style={{ font: "700 12px 'Plus Jakarta Sans',sans-serif", color: "#fff" }}>+ Enrol someone</div>
+                  <div style={{ font: "500 10px 'Plus Jakarta Sans',sans-serif", color: "rgba(255,255,255,.8)", marginTop: 3 }}>Name, email, phone, payment link</div>
                 </button>
               )}
 

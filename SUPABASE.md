@@ -28,11 +28,18 @@ Open **SQL Editor** and run each file in `supabase/migrations/` in order:
 | `0010_course_brochure.sql` | `courses.brochure_url`, and PDFs in the `course-media` bucket |
 | `0011_course_modules.sql` | The real syllabus for the three courses that publish one — PoSH (15), POCSO (8) and DEI (13) |
 | `0012_drop_demo_course.sql` | Deletes the demo course, its sessions, its test enrolments and its progress rows |
+| `0013_batches.sql` | `batches` (each dated run of a course), `sessions.batch_id` with every existing session backfilled into a batch, and the private `session_links` table for Zoom links |
+| `0014_enrolments_by_batch.sql` | Enrolments move onto batches with a pending / paid / cancelled status and a payment link; drops the two policies that let a learner mark their own enrolment paid; seat capacity per batch, locked against double booking |
+| `0015_posh_lms_modules.sql` | PoSH's module list becomes the 13 modules the LMS content is written in, each with its lesson ids |
+| `0016_enquiry_source.sql` | Lead-source columns on `enquiries` |
+| `0017_learner_access.sql` | Enrolment claim codes (`LVT-XXXXXX`) and `claim_enrolment`, `batch_module_unlocks`, `my_course_access` for the LMS, `batch_seats_left`, and `record_paid_enrolment` for the payment server (service key only) |
 
 Every file is written to be re-runnable, so running one twice is safe. Without
 `0003`, image uploads fail with *"the course-media bucket is missing"*; without
 `0010`, saving a course fails outright, because the form writes `brochure_url`
-on every save.
+on every save. The admin from `0013` onwards loads batches and enrolments on
+start-up, so run `0013`–`0015` **before** deploying it — the build before it
+keeps working against the new schema in the meantime.
 
 ## 3. Wire the keys
 

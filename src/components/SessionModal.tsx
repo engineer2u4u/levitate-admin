@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createSession, seatsTaken, updateSession } from "@/lib/store";
+import { createSession, linkFor, sessionDateLabel, updateSession } from "@/lib/store";
 import { useAdminData } from "@/lib/useStore";
 import type { Session, SessionStatus } from "@/lib/types";
 import { Field, Modal, ModalActions, input } from "./ui";
@@ -12,21 +12,6 @@ const STATUSES: { key: SessionStatus; label: string }[] = [
   { key: "open", label: "Open" },
   { key: "closed", label: "Closed" },
 ];
-
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/**
- * "2026-10-03" → "Sat 3 Oct 2026", the label the website and this admin print.
- *
- * Built from the date's own parts rather than through `new Date(iso)`, which
- * is midnight UTC and prints as the day before anywhere west of it.
- */
-function dateLabel(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return "";
-  return `${DAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} ${MONTHS[m - 1]} ${y}`;
-}
 
 /** The clock time an ISO instant falls at in India, "18:00". */
 function istTime(iso: string | null): string {
@@ -39,107 +24,143 @@ function istTime(iso: string | null): string {
 /** A day and a wall-clock time in India, as an instant. */
 const istInstant = (day: string, time: string) => `${day}T${time}:00+05:30`;
 
-type Props = { session?: Session; courseId?: string; onClose: () => void };
+const HTTPS = /^https:\/\/\S+$/i;
 
-/** Create or edit a scheduled session. `courseId` preselects the course. */
-export default function SessionModal({ session, courseId, onClose }: Props) {
+type Props = { session?: Session; courseId?: string; batchId?: string; onClose: () => void };
+
+/**
+ * Create or edit a live session. A session belongs to a batch — the run of the
+ * course it is part of — and carries that run's Zoom link.
+ *
+ * The Zoom details are saved apart from the session: the public website reads
+ * sessions to print dates, and a join link must never be public. Only staff
+ * see them here, and (in a later phase) paid learners of the batch.
+ */
+export default function SessionModal({ session, courseId, batchId, onClose }: Props) {
   const data = useAdminData();
   const toast = useToast();
   const editing = Boolean(session);
 
-  // Archived courses cannot take new dates.
-  const selectable = data.courses.filter((c) => c.status !== "archived");
+  // Finished batches take no new sessions; the one being edited stays listed.
+  const selectable = data.batches.filter(
+    (b) => b.status === "upcoming" || b.status === "running" || b.id === session?.batchId,
+  );
+  const courses = data.courses.filter((c) => selectable.some((b) => b.courseId === c.id));
+  const initialBatch =
+    session?.batchId ?? batchId ?? selectable.find((b) => !courseId || b.courseId === courseId)?.id ?? "";
 
-  const [course, setCourse] = useState(session?.courseId ?? courseId ?? selectable[0]?.id ?? "");
+  const existingLink = session ? linkFor(data, session.id) : null;
+
+  const [batch, setBatch] = useState(initialBatch);
   const [startsOn, setStartsOn] = useState(session?.startsOn ?? "");
   const [time, setTime] = useState(session?.time ?? "");
   const [topic, setTopic] = useState(session?.topic ?? "");
-  const [startTime, setStartTime] = useState(istTime(session?.startsAt ?? null));
-  const [endTime, setEndTime] = useState(istTime(session?.endsAt ?? null));
-  const [mode, setMode] = useState(session?.mode ?? "Online · Zoom");
-  const [trainer, setTrainer] = useState(session?.trainer ?? "");
-  const [seats, setSeats] = useState(String(session?.seats ?? 20));
+  // Not edited here any more, but kept: the masterclass stops taking payment at
+  // its exact start, so a session that has one keeps it — moved to the new day
+  // if the date changes. New sessions have none.
+  const startTime = istTime(session?.startsAt ?? null);
+  const endTime = istTime(session?.endsAt ?? null);
+  const mode = session?.mode || "Live online · Zoom";
+  const [trainer, setTrainer] = useState(session?.trainer ?? data.facilitators[0]?.name ?? "");
+  // The facilitators on file, plus whoever an older session names if they are
+  // not among them, so opening it does not quietly change who is shown.
+  const trainers = [
+    ...data.facilitators.map((f) => f.name),
+    ...(session?.trainer && !data.facilitators.some((f) => f.name === session.trainer) ? [session.trainer] : []),
+  ];
   const [status, setStatus] = useState<SessionStatus>(
     session?.status === "filling" || session?.status === "full" ? "open" : session?.status ?? "open",
   );
+  const [joinUrl, setJoinUrl] = useState(existingLink?.joinUrl ?? "");
+  const [meetingId, setMeetingId] = useState(existingLink?.meetingId ?? "");
+  const [passcode, setPasscode] = useState(existingLink?.passcode ?? "");
+  const [recordingUrl, setRecordingUrl] = useState(existingLink?.recordingUrl ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
-  // Seats already sold set the floor on how far capacity can be reduced.
-  const taken = session ? seatsTaken(data, session.id) : 0;
+  const chosen = data.batches.find((b) => b.id === batch);
 
   const submit = async () => {
     if (saving) return;
     const e: Record<string, string> = {};
-    if (!course) e.course = "Pick the course this session belongs to.";
+    if (!chosen) e.batch = "Pick the batch this session is part of.";
     if (!startsOn) e.startsOn = "Pick the date it runs on.";
     if (!time.trim()) e.time = "Give the timing as it should read on the site.";
-    if (!mode.trim()) e.mode = "Online or onsite, and where.";
     if (!trainer.trim()) e.trainer = "Who is facilitating?";
 
-    // The exact times are optional, and only meaningful together.
-    if (endTime && !startTime) e.startTime = "Give the start time too, or clear the end time.";
-    if (startTime && endTime && endTime <= startTime) e.endTime = "The end time has to be after the start time.";
-
-    const seatCount = Number(seats);
-    if (!Number.isInteger(seatCount) || seatCount < 1) e.seats = "Seats must be a whole number, at least 1.";
-    else if (seatCount < taken) e.seats = `${taken} seat${taken === 1 ? " is" : "s are"} already taken — capacity cannot go below that.`;
+    if (joinUrl.trim() && !HTTPS.test(joinUrl.trim())) e.joinUrl = "Paste the full Zoom link, starting https://";
+    if (recordingUrl.trim() && !HTTPS.test(recordingUrl.trim())) e.recordingUrl = "Paste the full link, starting https://";
 
     setErrors(e);
-    if (Object.keys(e).length) return;
+    if (Object.keys(e).length || !chosen) return;
 
     const payload = {
-      courseId: course,
+      courseId: chosen.courseId,
+      batchId: chosen.id,
       startsOn,
-      date: dateLabel(startsOn),
+      date: sessionDateLabel(startsOn),
       time: time.trim(),
       topic: topic.trim(),
       startsAt: startTime ? istInstant(startsOn, startTime) : null,
       endsAt: startTime && endTime ? istInstant(startsOn, endTime) : null,
-      mode: mode.trim(),
+      mode,
       trainer: trainer.trim(),
-      seats: seatCount,
+      // Capacity is the batch's; the column is kept in step with it.
+      seats: chosen.seats,
       status,
     };
+    const link = { joinUrl, meetingId, passcode, recordingUrl };
 
     setSaving(true);
-    const res = session ? await updateSession(session.id, payload) : await createSession(payload);
+    const res = session ? await updateSession(session.id, payload, link) : await createSession(payload, link);
     setSaving(false);
     if (!res.ok) {
       setErrors({ save: res.error });
       return;
     }
-    toast(session ? "Session updated" : status === "draft" ? "Session saved as a draft" : "Session published");
+    toast(session ? "Session updated" : status === "draft" ? "Session saved as a draft" : "Session added");
     onClose();
   };
+
+  const twoCol = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } as const;
 
   return (
     <Modal
       title={editing ? "Edit session" : "New session"}
-      sub={editing ? `${(startsOn && dateLabel(startsOn)) || "Session"} · ${mode}` : "A scheduled date for an existing course"}
+      sub={chosen ? `${data.courses.find((c) => c.id === chosen.courseId)?.short || ""} · ${chosen.name}` : "A live session in a batch"}
       onClose={onClose}
-      width={560}
+      width={580}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
         {selectable.length === 0 ? (
           <div style={{ font: "500 12.5px/1.7 'Plus Jakarta Sans',sans-serif", color: "var(--body)", background: "#fdf4e3", border: "1px solid #f0dcae", borderRadius: 10, padding: "14px 16px" }}>
-            Create a course first — a session has to belong to one.
+            Create a batch first under Batches — a session belongs to one run of a course.
           </div>
         ) : (
           <>
-            <Field label="Course" error={errors.course}>
-              <select value={course} onChange={(e) => setCourse(e.target.value)} style={{ ...input, cursor: "pointer" }}>
-                {selectable.map((c) => (
-                  <option key={c.id} value={c.id}>{c.title}{c.status === "draft" ? " (draft)" : ""}</option>
-                ))}
-              </select>
-            </Field>
+            {/* Opened from a batch — or editing a session, which already has
+                one — the batch is known and shown in the title, so there is
+                nothing to choose. The picker stays only for a caller without. */}
+            {!batchId && !session && (
+              <Field label="Batch" error={errors.batch}>
+                <select value={batch} onChange={(e) => setBatch(e.target.value)} style={{ ...input, cursor: "pointer" }}>
+                  <option value="" disabled>Choose a batch…</option>
+                  {courses.map((c) => (
+                    <optgroup key={c.id} label={c.short || c.title}>
+                      {selectable.filter((b) => b.courseId === c.id).map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}{b.status === "running" ? " (running)" : ""}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </Field>
+            )}
 
-            <div className="form-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="form-2col" style={twoCol}>
               <Field
                 label="Date"
                 error={errors.startsOn}
-                hint={startsOn ? `The site prints "${dateLabel(startsOn)}"` : "The site formats it for each place it appears."}
+                hint={startsOn ? `The site prints "${sessionDateLabel(startsOn)}"` : "The site formats it for each place it appears."}
               >
                 <input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} style={input} />
               </Field>
@@ -152,48 +173,54 @@ export default function SessionModal({ session, courseId, onClose }: Props) {
               <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Foundations & the CLEAR framework" style={input} />
             </Field>
 
-            {/* The minute only matters where something turns on it: a paid
-                one-off stops taking registrations when it starts. */}
-            <div className="form-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Field label="Exact start (IST)" error={errors.startTime} hint="Optional. Registration closes at this moment.">
-                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} style={input} />
+            <Field
+              label="Facilitator"
+              error={errors.trainer}
+              hint={trainers.length === 0 ? "Add facilitators under Facilitators first." : undefined}
+            >
+              <select value={trainer} onChange={(e) => setTrainer(e.target.value)} style={{ ...input, cursor: "pointer" }}>
+                <option value="" disabled>Choose a facilitator…</option>
+                {trainers.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </Field>
+
+            <div style={{ borderTop: "1px solid var(--line-soft)", paddingTop: 13, display: "flex", flexDirection: "column", gap: 13 }}>
+              <div style={{ font: "500 11px/1.6 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>
+                <strong style={{ color: "var(--ink)" }}>Zoom.</strong> Kept private — never shown on the public website.
+              </div>
+              <Field label="Join link" error={errors.joinUrl}>
+                <input value={joinUrl} onChange={(e) => setJoinUrl(e.target.value)} placeholder="https://us06web.zoom.us/j/…" style={input} />
               </Field>
-              <Field label="Exact end (IST)" error={errors.endTime} hint="Optional.">
-                <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} style={input} />
+              <div className="form-2col" style={twoCol}>
+                <Field label="Meeting ID" hint="Optional.">
+                  <input value={meetingId} onChange={(e) => setMeetingId(e.target.value)} placeholder="812 3456 7890" style={input} />
+                </Field>
+                <Field label="Passcode" hint="Optional.">
+                  <input value={passcode} onChange={(e) => setPasscode(e.target.value)} style={input} />
+                </Field>
+              </div>
+              <Field label="Recording link" error={errors.recordingUrl} hint="Add after the session, for anyone who missed it.">
+                <input value={recordingUrl} onChange={(e) => setRecordingUrl(e.target.value)} placeholder="https://…" style={input} />
               </Field>
             </div>
 
-            <div className="form-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Field label="Mode & venue" error={errors.mode}>
-                <input value={mode} onChange={(e) => setMode(e.target.value)} placeholder="Online · Zoom" style={input} />
-              </Field>
-              <Field label="Facilitator" error={errors.trainer}>
-                <input value={trainer} onChange={(e) => setTrainer(e.target.value)} placeholder="Parichita Kotnala" style={input} />
-              </Field>
-            </div>
-
-            <div className="form-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Field label="Seats" error={errors.seats} hint={taken > 0 ? `${taken} already enrolled` : "Total capacity"}>
-                <input type="number" min={1} value={seats} onChange={(e) => setSeats(e.target.value)} style={input} />
-              </Field>
-              <Field label="Status" hint="Full and Filling are worked out from bookings">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
-                  {STATUSES.map((s) => {
-                    const on = status === s.key;
-                    return (
-                      <button
-                        key={s.key}
-                        type="button"
-                        onClick={() => setStatus(s.key)}
-                        style={{ cursor: "pointer", border: `1.5px solid ${on ? "#2fc4bc" : "var(--line)"}`, background: on ? "#eafaf8" : "#fff", borderRadius: 9, padding: "9px 6px", font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)" }}
-                      >
-                        {s.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </Field>
-            </div>
+            <Field label="Status" hint="Completing the batch closes all its sessions.">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+                {STATUSES.map((s) => {
+                  const on = status === s.key;
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => setStatus(s.key)}
+                      style={{ cursor: "pointer", border: `1.5px solid ${on ? "#2fc4bc" : "var(--line)"}`, background: on ? "#eafaf8" : "#fff", borderRadius: 9, padding: "9px 6px", font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)" }}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
 
             {errors.save && (
               <div role="alert" style={{ font: "600 11px/1.5 'Plus Jakarta Sans',sans-serif", color: "#9a2c2c", background: "#fdeceb", border: "1px solid #f3c9c6", borderRadius: 9, padding: "9px 11px" }}>
@@ -204,7 +231,7 @@ export default function SessionModal({ session, courseId, onClose }: Props) {
             <ModalActions>
               <button type="button" className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
               <button type="button" className="btn btn-primary" onClick={() => void submit()} disabled={saving}>
-                {saving ? "Saving…" : editing ? "Save changes" : "Publish session"}
+                {saving ? "Saving…" : editing ? "Save changes" : "Add session"}
               </button>
             </ModalActions>
           </>

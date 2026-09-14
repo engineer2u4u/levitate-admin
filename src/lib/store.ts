@@ -1,38 +1,56 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   AdminData,
+  Batch,
+  BatchInput,
   CertificateSettings,
   Course,
   CourseInput,
   Enrolment,
+  EnrolmentInput,
+  EnrolmentStatus,
   Facilitator,
+  LearnerProgress,
+  LegacyEnrolment,
   LocalData,
+  ModuleUnlock,
   Session,
   SessionInput,
+  SessionLink,
 } from "./types";
 import { DEFAULT_CERTIFICATE } from "./certificate";
 import {
+  batchFromRow,
+  batchToRow,
   courseFromRow,
   coursePatchToRow,
+  enrolmentFromRow,
+  enrolmentToRow,
   getClient,
   sessionFromRow,
+  sessionLinkFromRow,
+  sessionLinkToRow,
   sessionToRow,
+  type BatchDbRow,
   type CourseRow,
+  type EnrolmentRow,
+  type ModuleUnlockRow,
+  type SessionLinkRow,
   type SessionRow,
 } from "./supabase";
 
 /**
  * Persistence for the admin, in two halves.
  *
- * Courses and sessions live in Supabase — the same `courses` and `sessions`
- * tables the public website reads, so what is saved here is what visitors
- * see. They load once a staff session exists (AuthGate asks for them), and
- * every change is shown first and written second: a write the database
- * refuses is rolled back and its reason handed to the caller to show.
+ * The database half is everything the website or learners also depend on:
+ * courses, their batches and sessions, Zoom links, and enrolments. It loads
+ * once a staff session exists (AuthGate asks for it), and every change is
+ * shown first and written second: a write the database refuses is rolled back
+ * and its reason handed to the caller to show.
  *
- * Facilitators, enrolments and certificate settings are still localStorage —
- * per-browser, and shared with nobody. Screens read both halves as one
- * `AdminData` snapshot and never need to know which is which.
+ * Facilitators and certificate settings are still localStorage — per-browser,
+ * and shared with nobody. Screens read both halves as one `AdminData` snapshot
+ * and never need to know which is which.
  */
 const KEY = "lvt.admin.data.v1";
 
@@ -43,25 +61,32 @@ export const subscribe = (cb: () => void) => {
   return () => listeners.delete(cb) as unknown as void;
 };
 
-export const EMPTY: AdminData = { certificate: DEFAULT_CERTIFICATE, facilitators: [], courses: [], sessions: [], enrolments: [] };
+export const EMPTY: AdminData = {
+  certificate: DEFAULT_CERTIFICATE,
+  facilitators: [],
+  courses: [],
+  batches: [],
+  sessions: [],
+  sessionLinks: [],
+  enrolments: [],
+  moduleUnlocks: [],
+  progress: [],
+};
 
-/**
- * What a browser starts with: the certificate defaults and nothing else.
- *
- * It used to start with invented facilitators and enrolments, so the screens
- * would not look empty on a first run. They made the Courses screen quote
- * enrolment counts and fees collected that no customer had ever paid, which is
- * worse than an empty screen — the empty states say what to do next.
- */
-const BLANK = (): LocalData => ({ certificate: DEFAULT_CERTIFICATE, facilitators: [], enrolments: [] });
+/** What a browser starts with: the certificate defaults and nothing else. */
+const BLANK = (): LocalData => ({ certificate: DEFAULT_CERTIFICATE, facilitators: [] });
 
 /** Where the database half stands. `idle` means nobody has asked yet. */
 export type CatalogStatus = { state: "idle" | "loading" | "ready" | "error"; error: string };
 
 export const CATALOG_IDLE: CatalogStatus = { state: "idle", error: "" };
 
+type Catalog = Pick<AdminData, "courses" | "batches" | "sessions" | "sessionLinks" | "enrolments" | "moduleUnlocks" | "progress">;
+
+const NO_CATALOG: Catalog = { courses: [], batches: [], sessions: [], sessionLinks: [], enrolments: [], moduleUnlocks: [], progress: [] };
+
 let local: LocalData | null = null;
-let catalog: { courses: Course[]; sessions: Session[] } = { courses: [], sessions: [] };
+let catalog: Catalog = NO_CATALOG;
 let status: CatalogStatus = CATALOG_IDLE;
 
 /** The combined snapshot, rebuilt only after a change — useSyncExternalStore
@@ -75,7 +100,7 @@ const emit = () => {
 
 export function read(): AdminData {
   if (typeof window === "undefined") return EMPTY;
-  cache ??= { ...readLocal(), courses: catalog.courses, sessions: catalog.sessions };
+  cache ??= { ...readLocal(), ...catalog };
   return cache;
 }
 
@@ -83,51 +108,66 @@ export const readCatalogStatus = () => status;
 
 /* ------------------------------ local half ----------------------------- */
 
-/**
- * The demo catalogue's course ids, and the database course that replaced
- * each. Enrolments made before the move point at these, and are re-pointed
- * once the real courses load. Any other id is left exactly as it is.
- */
-const LEGACY_COURSES: Record<string, string> = {
-  c_posh: "posh-trainer",
-  c_pocso: "pocso-child-safety",
-  c_dei: "inclusive-workplace",
-  c_well: "workplace-wellbeing",
-};
-
-/** What is kept of a session from the old local catalogue: enough to find
- *  the same day in the database, and nothing else. */
-type LegacySession = { id: string; courseId: string; date: string };
-
-/** Held until the database catalogue has loaded once, then dropped. */
-let legacySessions: LegacySession[] | null = null;
-
-/** What localStorage may hold: this browser's records and — from before the
- *  move to the database — its old copy of the catalogue. */
+/** What localStorage may hold: this browser's records, plus leftovers from
+ *  before courses, sessions and enrolments moved to the database. */
 type Stored = Partial<LocalData> & {
+  enrolments?: LegacyEnrolment[];
   courses?: unknown[];
-  sessions?: LegacySession[];
-  legacySessions?: LegacySession[];
+  sessions?: unknown[];
+  legacySessions?: unknown[];
+  /** How many rounds of STARTERS this browser has already been given. */
+  starters?: number;
 };
+
+/**
+ * Real records every browser should have, added once.
+ *
+ * Parichita Kotnala leads every course on the website, and facilitators live
+ * in this browser rather than the database, so without this each laptop would
+ * need her typed in by hand. Her title, bio and photograph are the ones
+ * levitatepeoplesoft.com publishes on her own page.
+ *
+ * Added once, not on every read: `starters` records that it happened, so
+ * deleting her here stays deleted. Bump the number to add a later round.
+ */
+const STARTERS = 1;
+const STARTER_FACILITATORS: Facilitator[] = [
+  {
+    id: "f_parichita_kotnala",
+    name: "Parichita Kotnala",
+    title: "Founder & Managing Partner, Levitate PeopleSoft",
+    description:
+      "Parichita brings over 15 years of global HR, leadership development and workplace culture experience across diverse teams and business environments. " +
+      "Her work spans HR business partnering, leadership enablement, performance, employee relations, workplace compliance, PoSH, POCSO, wellbeing, DEI and people advisory. " +
+      "At Levitate PeopleSoft she leads the organisation's next phase of growth through globally designed, practice-led certification programs.",
+    imageUrl: "https://levitatepeoplesoft.com/assets/parichita-kotnala.jpg",
+    createdAt: "2026-09-14T00:00:00.000Z",
+  },
+];
+
+/** Adds starters a browser has not been given yet. Someone already entered by
+ *  hand under the same name is not added twice. */
+function withStarters(data: LocalData, given: number): LocalData {
+  if (given >= STARTERS) return data;
+  const names = new Set(data.facilitators.map((f) => f.name.trim().toLowerCase()));
+  const missing = STARTER_FACILITATORS.filter((f) => !names.has(f.name.toLowerCase()));
+  return missing.length ? { ...data, facilitators: [...missing, ...data.facilitators] } : data;
+}
 
 /**
  * The ids of the records earlier versions seeded into every browser — five
  * invented enrolments and two facilitators. Dropped on read wherever they are
- * still stored, so what these screens count is this business's own. Generated
- * ids carry a timestamp and random tail, so nothing real can collide.
+ * still stored. Generated ids carry a timestamp and random tail, so nothing
+ * real can collide.
  */
 const DEMO_IDS = new Set(["e_1", "e_2", "e_3", "e_4", "e_5", "f_parichita", "f_faculty"]);
 
-/** Fills in fields added after a browser last wrote its data, and takes out
- *  the demo records it may have been given on a first run. */
-function normalise(data: Stored): LocalData {
-  return {
-    // Settings gained fields over time; anything absent takes the default.
-    certificate: { ...DEFAULT_CERTIFICATE, ...(data.certificate ?? {}) },
-    facilitators: (data.facilitators ?? []).filter((f) => !DEMO_IDS.has(f.id)),
-    enrolments: (data.enrolments ?? []).filter((e) => !DEMO_IDS.has(e.id)),
-  };
-}
+/**
+ * Enrolments this browser made before they moved to the database. Nothing
+ * reads them any more except the prompt on the Enrolments screen, which offers
+ * them as a CSV to re-enter before clearing them.
+ */
+let legacyEnrolments: LegacyEnrolment[] = [];
 
 function readLocal(): LocalData {
   if (local) return local;
@@ -135,25 +175,28 @@ function readLocal(): LocalData {
     const raw = window.localStorage.getItem(KEY);
     if (raw) {
       const stored = JSON.parse(raw) as Stored;
-      local = normalise(stored);
+      local = withStarters(
+        {
+          // Settings gained fields over time; anything absent takes the default.
+          certificate: { ...DEFAULT_CERTIFICATE, ...(stored.certificate ?? {}) },
+          facilitators: (stored.facilitators ?? []).filter((f) => !DEMO_IDS.has(f.id)),
+        },
+        stored.starters ?? 0,
+      );
+      legacyEnrolments = (stored.enrolments ?? []).filter((e) => !DEMO_IDS.has(e.id));
+      // Rewrite once, so leftovers — an old copy of the catalogue, a demo
+      // record — are gone rather than skipped on every read.
       const demo =
-        local.facilitators.length !== (stored.facilitators?.length ?? 0) ||
-        local.enrolments.length !== (stored.enrolments?.length ?? 0);
-      // A browser from before the move still holds its own courses and
-      // sessions. The courses are ignored — the database has them — but the
-      // session dates are kept until enrolments booked on them are re-pointed.
-      const hints = stored.legacySessions ?? (stored.sessions ?? []).map(({ id, courseId, date }) => ({ id, courseId, date }));
-      legacySessions = hints.length ? hints : null;
-      // Rewrite straight away, so the old copy of the catalogue — and any
-      // demo record just dropped — is gone rather than dropped again on
-      // every read.
-      if (stored.courses || stored.sessions || demo) persist();
+        (stored.facilitators ?? []).some((f) => DEMO_IDS.has(f.id)) ||
+        (stored.enrolments ?? []).some((e) => DEMO_IDS.has(e.id));
+      const stale = Boolean(stored.courses || stored.sessions || stored.legacySessions) || demo || (stored.starters ?? 0) < STARTERS;
+      if (stale) persist();
     } else {
-      local = BLANK();
+      local = withStarters(BLANK(), 0);
       persist();
     }
   } catch {
-    local = BLANK();
+    local = withStarters(BLANK(), 0);
   }
   return local;
 }
@@ -161,7 +204,14 @@ function readLocal(): LocalData {
 function persist() {
   if (!local) return;
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(legacySessions ? { ...local, legacySessions } : local));
+    // `starters` is always the current round: whatever this browser holds now
+    // already reflects it, including a starter someone has since deleted.
+    const stored: Stored = {
+      ...local,
+      starters: STARTERS,
+      ...(legacyEnrolments.length ? { enrolments: legacyEnrolments } : {}),
+    };
+    window.localStorage.setItem(KEY, JSON.stringify(stored));
   } catch {
     /* quota or private mode — changes will not survive a reload */
   }
@@ -176,6 +226,19 @@ function writeLocal(next: LocalData) {
 const id = (prefix: string) =>
   `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
+/** Browser-only enrolments from before the move, for the Enrolments screen. */
+export function readLegacyEnrolments(): LegacyEnrolment[] {
+  readLocal();
+  return legacyEnrolments;
+}
+
+export function clearLegacyEnrolments() {
+  readLocal();
+  legacyEnrolments = [];
+  persist();
+  emit();
+}
+
 /* ---------------------------- database half ---------------------------- */
 
 /** The website's order: display order, then title. */
@@ -187,8 +250,23 @@ const bySessionDate = (a: Session, b: Session) =>
   (Date.parse(a.startsAt ?? "") || 0) - (Date.parse(b.startsAt ?? "") || 0) ||
   a.createdAt.localeCompare(b.createdAt);
 
-function setCatalog(next: { courses: Course[]; sessions: Session[] }) {
-  catalog = { courses: [...next.courses].sort(byCourseOrder), sessions: [...next.sessions].sort(bySessionDate) };
+/** Soonest first; an undated batch after the dated ones. */
+const byBatchDate = (a: Batch, b: Batch) =>
+  (a.startsOn ?? "9999").localeCompare(b.startsOn ?? "9999") || a.createdAt.localeCompare(b.createdAt);
+
+const byNewest = (a: Enrolment, b: Enrolment) => b.createdAt.localeCompare(a.createdAt);
+
+function setCatalog(next: Partial<Catalog>) {
+  const merged = { ...catalog, ...next };
+  catalog = {
+    courses: [...merged.courses].sort(byCourseOrder),
+    batches: [...merged.batches].sort(byBatchDate),
+    sessions: [...merged.sessions].sort(bySessionDate),
+    sessionLinks: merged.sessionLinks,
+    enrolments: [...merged.enrolments].sort(byNewest),
+    moduleUnlocks: merged.moduleUnlocks,
+    progress: merged.progress,
+  };
   emit();
 }
 
@@ -201,35 +279,63 @@ function setStatus(next: CatalogStatus) {
  *  session that has since changed hands is dropped rather than shown. */
 let generation = 0;
 
-/** Reads every course and session. Staff read all rows, drafts included. */
+/** Reads the whole database half. Staff read every row, drafts included. */
 export async function loadCatalog(): Promise<void> {
   const mine = ++generation;
   setStatus({ state: "loading", error: "" });
   try {
     const db = await getClient();
-    const [courses, sessions] = await Promise.all([
+    const [courses, batches, sessions, links, enrolments] = await Promise.all([
       db.from("courses").select("*").order("sort_order").order("title"),
-      db.from("sessions").select("*").order("starts_on", { ascending: true, nullsFirst: false }),
+      db.from("batches").select("*"),
+      db.from("sessions").select("*"),
+      db.from("session_links").select("*"),
+      db.from("enrolments").select("*").order("created_at", { ascending: false }),
     ]);
-    const error = courses.error ?? sessions.error;
-    if (error) throw new Error(friendly(error));
+    const error = courses.error ?? batches.error ?? sessions.error ?? links.error ?? enrolments.error;
+    if (error) throw error;
+
+    // Unlocks and progress enrich the batch screen but are not needed to run
+    // the rest, so a database that has not had 0017 yet still loads.
+    const [unlocks, progress] = await Promise.all([
+      db.from("batch_module_unlocks").select("*"),
+      db.from("course_progress_admin").select("user_id, course_slug, completed_items, completed_at, updated_at"),
+    ]);
     if (mine !== generation) return;
     setCatalog({
       courses: ((courses.data ?? []) as CourseRow[]).map(courseFromRow),
+      batches: ((batches.data ?? []) as BatchDbRow[]).map(batchFromRow),
       sessions: ((sessions.data ?? []) as SessionRow[]).map(sessionFromRow),
+      sessionLinks: ((links.data ?? []) as SessionLinkRow[]).map(sessionLinkFromRow),
+      enrolments: ((enrolments.data ?? []) as EnrolmentRow[]).map(enrolmentFromRow),
+      moduleUnlocks: unlocks.error ? [] : ((unlocks.data ?? []) as ModuleUnlockRow[]).map((r) => ({
+        batchId: r.batch_id,
+        moduleId: r.module_id,
+        unlockedAt: r.unlocked_at,
+        afterSessionId: r.after_session_id ?? null,
+      })),
+      progress: progress.error ? [] : ((progress.data ?? []) as {
+        user_id: string; course_slug: string; completed_items: string[] | null; completed_at: string | null; updated_at: string;
+      }[]).map((r) => ({
+        userId: r.user_id,
+        courseSlug: r.course_slug,
+        completedItems: r.completed_items ?? [],
+        completedAt: r.completed_at ?? null,
+        updatedAt: r.updated_at,
+      })),
     });
-    repointLegacy();
     setStatus({ state: "ready", error: "" });
   } catch (e) {
     if (mine !== generation) return;
-    setStatus({ state: "error", error: friendly({ message: e instanceof Error ? e.message : String(e) }) });
+    const err = e as Partial<DbError>;
+    setStatus({ state: "error", error: friendly({ message: err.message ?? String(e), code: err.code }) });
   }
 }
 
 /** On sign-out: the next account may not be allowed to see the same rows. */
 export function clearCatalog() {
   generation++;
-  catalog = { courses: [], sessions: [] };
+  catalog = NO_CATALOG;
   status = CATALOG_IDLE;
   emit();
 }
@@ -248,13 +354,18 @@ const IN_USE = "Something in the database still points at it.";
 /** Turns a database refusal into a sentence someone can act on. */
 function friendly({ message, code }: DbError): string {
   if (code === "42501" || /row-level security|permission denied/i.test(message)) {
-    return "Only an admin can change courses and sessions. This account can view them, not edit them.";
+    return "Only an admin can make changes here. This account can view, not edit.";
   }
+  if (/Batch is full/i.test(message)) return "That batch is full. Add seats to the batch, or choose another one.";
+  if (/enrolments_one_per_batch/.test(message)) return "Someone with that email is already enrolled in this batch.";
+  if (/batches_course_code/.test(message)) return "Another batch of this course already uses that code.";
+  if (/_https|join_url|recording_url|payment_link/.test(message)) return "Links have to be full addresses starting with https://";
+  if (/has no module/.test(message)) return message;
+  if (/batches_ends_after_starts|sessions_ends_after_starts/.test(message)) return "The end has to be after the start.";
   if (code === "23503") return IN_USE;
-  if (code === "23505") return "Another course already has that web address. Reload the page and save again.";
-  if (/sessions_ends_after_starts/.test(message)) return "The end time has to be after the start time.";
+  if (code === "23505") return "That already exists. Reload the page and check.";
   if (/does not exist|schema cache/i.test(message)) {
-    return "The database is missing columns this screen needs. Run migrations 0007 and 0008 in the Supabase SQL editor, then reload.";
+    return "The database is missing tables or columns this screen needs. Run migrations 0013, 0014 and 0015 in the Supabase SQL editor, then reload.";
   }
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
     return "Could not reach the database. Check the connection and try again.";
@@ -298,72 +409,9 @@ function uuid(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-/** Puts a course in place of the one with its id. */
-const putCourse = (course: Course) =>
-  setCatalog({ ...catalog, courses: catalog.courses.map((c) => (c.id === course.id ? course : c)) });
-
-const putSession = (session: Session) =>
-  setCatalog({ ...catalog, sessions: catalog.sessions.map((s) => (s.id === session.id ? session : s)) });
-
-/* ------------------------------- legacy -------------------------------- */
-
-const MONTH_INDEX = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-
-/** "26 Sep 2026" or "Sat 26 Sep 2026" → "2026-09-26". Null for anything less
- *  certain: "late September" matches nothing, which is the point. */
-function isoFromLegacyDate(label: string): string | null {
-  const m = /^(?:[a-z]{3,9},?\s+)?(\d{1,2})\s+([a-z]{3,9})\.?,?\s+(\d{4})$/i.exec(label.trim());
-  if (!m) return null;
-  const month = MONTH_INDEX.indexOf(m[2].slice(0, 3).toLowerCase());
-  const day = Number(m[1]);
-  if (month < 0 || day < 1 || day > 31) return null;
-  return `${m[3]}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-/**
- * Re-points enrolments made against the old demo catalogue at the database
- * rows that replaced it. Runs after every catalogue load and changes nothing
- * once there is nothing left to change.
- *
- * Courses go by slug, which is fixed. Sessions are riskier — a booking moved
- * to the wrong day is worse than one showing no day — so an enrolment moves
- * only when its old session's date is exactly the day of one, and only one,
- * database session of the same course. Anything else keeps the id it had.
- */
-function repointLegacy() {
-  const d = readLocal();
-  // An empty catalogue means the database has not been seeded yet. Keep the
-  // old dates for a later load rather than spending their one chance on it.
-  if (catalog.courses.length === 0) return;
-
-  const bySlug = new Map(catalog.courses.map((c) => [c.slug, c.id]));
-  const courseFor = (courseId: string) => {
-    const slug = LEGACY_COURSES[courseId];
-    return (slug && bySlug.get(slug)) || courseId;
-  };
-  const oldSessions = new Map((legacySessions ?? []).map((s) => [s.id, s]));
-
-  let changed = false;
-  const enrolments = d.enrolments.map((e) => {
-    const courseId = courseFor(e.courseId);
-    let sessionId = e.sessionId;
-    const old = oldSessions.get(e.sessionId);
-    const day = old ? isoFromLegacyDate(old.date) : null;
-    if (old && day && courseFor(old.courseId) === courseId) {
-      const matches = catalog.sessions.filter((s) => s.courseId === courseId && s.startsOn === day);
-      if (matches.length === 1) sessionId = matches[0].id;
-    }
-    if (courseId === e.courseId && sessionId === e.sessionId) return e;
-    changed = true;
-    return { ...e, courseId, sessionId };
-  });
-
-  // The old dates have had their chance to match. Keeping them any longer
-  // would keep a piece of the old catalogue in storage for nothing.
-  const hadLegacy = legacySessions !== null;
-  legacySessions = null;
-  if (changed) writeLocal({ ...d, enrolments });
-  else if (hadLegacy) persist();
+/** Replaces the row with the same id in one list of the catalogue. */
+function put<K extends "courses" | "batches" | "sessions" | "enrolments">(list: K, row: Catalog[K][number]) {
+  setCatalog({ [list]: (catalog[list] as { id: string }[]).map((r) => (r.id === row.id ? row : r)) } as Partial<Catalog>);
 }
 
 /* --------------------------- certificates ---------------------------- */
@@ -410,8 +458,6 @@ export const coursesFor = (d: AdminData, facilitatorId: string) =>
 
 /* ------------------------------ courses ------------------------------ */
 
-/** The web address a new course with this title would get — unique among
- *  every course, drafts and archived ones included. */
 /*
  * There is no createCourse. A course carries the website's own copy — its
  * slug, its card text, its imagery — and a slug is permanent once anyone has
@@ -423,7 +469,7 @@ export async function updateCourse(courseId: string, patch: Partial<CourseInput>
   const before = catalog.courses.find((c) => c.id === courseId);
   if (!before) return { ok: false, error: "That course is no longer in the catalogue. Reload the page." };
   const after: Course = { ...before, ...patch };
-  putCourse(after);
+  put("courses", after);
 
   const res = await run<CourseRow>((db) =>
     db.from("courses").update(coursePatchToRow(after, patch)).eq("id", courseId).select().maybeSingle(),
@@ -431,31 +477,26 @@ export async function updateCourse(courseId: string, patch: Partial<CourseInput>
   if (!res.ok) {
     // Undo only this edit. If something newer has replaced the row since,
     // that is more current than either copy held here.
-    if (catalog.courses.find((c) => c.id === courseId) === after) putCourse(before);
+    if (catalog.courses.find((c) => c.id === courseId) === after) put("courses", before);
     return res;
   }
-  putCourse(courseFromRow(res.data));
+  put("courses", courseFromRow(res.data));
   return { ok: true };
 }
 
 /**
- * Deleting a course would orphan its sessions and rewrite enrolment history,
- * so a course in use is archived instead — it leaves the catalogue but every
- * record that points at it stays intact.
- *
- * "In use" is an enrolment in this browser, or one in the database — the
- * website's own sales — which Postgres reports by refusing the delete.
+ * Deleting a course would erase its batches and the record of who took them,
+ * so a course with any batch is archived instead — the database refuses the
+ * delete (batches restrict it), and the refusal becomes an archive.
  */
 export async function removeCourse(courseId: string): Promise<{ ok: true; archived: boolean } | Failure> {
   const archive = async () => {
     const res = await updateCourse(courseId, { status: "archived" });
     return res.ok ? { ok: true as const, archived: true } : res;
   };
-  if (readLocal().enrolments.some((e) => e.courseId === courseId)) return archive();
+  if (catalog.batches.some((b) => b.courseId === courseId)) return archive();
 
-  const course = catalog.courses.find((c) => c.id === courseId);
-  const sessions = catalog.sessions.filter((s) => s.courseId === courseId);
-  // Its sessions go with it: the database cascades, and so does the screen.
+  const before = catalog;
   setCatalog({
     courses: catalog.courses.filter((c) => c.id !== courseId),
     sessions: catalog.sessions.filter((s) => s.courseId !== courseId),
@@ -464,109 +505,353 @@ export async function removeCourse(courseId: string): Promise<{ ok: true; archiv
   const res = await run<{ id: string }[]>((db) => db.from("courses").delete().eq("id", courseId).select("id"), NOT_DELETED);
   if (res.ok) return { ok: true, archived: false };
 
-  // Put back what was taken off, leaving anything changed meanwhile alone.
-  setCatalog({
-    courses: course && !catalog.courses.some((c) => c.id === courseId) ? [...catalog.courses, course] : catalog.courses,
-    sessions: [...catalog.sessions, ...sessions.filter((s) => !catalog.sessions.some((x) => x.id === s.id))],
-  });
+  setCatalog({ courses: before.courses, sessions: before.sessions });
   return res.error === IN_USE ? archive() : res;
+}
+
+/* ------------------------------ batches ------------------------------ */
+
+/** Whole days from one ISO day to another. */
+function daysBetween(from: string, to: string): number {
+  const [a, b] = [from, to].map((d) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)));
+  return Math.round((b - a) / 86_400_000);
+}
+
+/** An ISO day moved by a number of days. */
+function shiftDay(iso: string, days: number): string {
+  const t = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + days));
+  return t.toISOString().slice(0, 10);
+}
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-10-03" → "Sat 3 Oct 2026", the label the website prints. */
+export function sessionDateLabel(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return `${DAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+/**
+ * Creates a batch, optionally with the sessions of an earlier batch copied
+ * into it — same timings, topics and facilitators, every date moved so the
+ * first session lands on `firstDay`. Zoom links are not copied: each run has
+ * its own meetings.
+ */
+export async function createBatch(
+  input: BatchInput,
+  copy?: { fromBatchId: string; firstDay: string },
+): Promise<{ ok: true; batch: Batch } | Failure> {
+  const batch: Batch = { ...input, id: uuid(), completedAt: null, createdAt: new Date().toISOString() };
+  setCatalog({ batches: [...catalog.batches, batch] });
+
+  const res = await run<BatchDbRow>((db) => db.from("batches").insert({ id: batch.id, ...batchToRow(batch) }).select().single());
+  if (!res.ok) {
+    setCatalog({ batches: catalog.batches.filter((b) => b.id !== batch.id) });
+    return res;
+  }
+  const saved = batchFromRow(res.data);
+  put("batches", saved);
+
+  if (copy) {
+    const source = catalog.sessions.filter((s) => s.batchId === copy.fromBatchId && s.startsOn);
+    const anchor = source[0]?.startsOn;
+    if (anchor) {
+      const shift = daysBetween(anchor, copy.firstDay);
+      const moveInstant = (iso: string | null) => (iso ? new Date(Date.parse(iso) + shift * 86_400_000).toISOString() : null);
+      const sessions: Session[] = source.map((s) => {
+        const day = shiftDay(s.startsOn!, shift);
+        return {
+          ...s,
+          id: uuid(),
+          batchId: saved.id,
+          startsOn: day,
+          date: sessionDateLabel(day),
+          startsAt: moveInstant(s.startsAt),
+          endsAt: moveInstant(s.endsAt),
+          seats: saved.seats,
+          status: "open",
+          createdAt: new Date().toISOString(),
+        };
+      });
+      setCatalog({ sessions: [...catalog.sessions, ...sessions] });
+      const copied = await run<SessionRow[]>((db) =>
+        db.from("sessions").insert(sessions.map((s) => ({ id: s.id, ...sessionToRow(s) }))).select(),
+      );
+      if (!copied.ok) {
+        const ids = new Set(sessions.map((s) => s.id));
+        setCatalog({ sessions: catalog.sessions.filter((s) => !ids.has(s.id)) });
+        return { ok: false, error: `The batch was created, but its sessions could not be copied: ${copied.error}` };
+      }
+      const rows = copied.data.map(sessionFromRow);
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      setCatalog({ sessions: catalog.sessions.map((s) => byId.get(s.id) ?? s) });
+    }
+  }
+  return { ok: true, batch: saved };
+}
+
+export async function updateBatch(batchId: string, patch: Partial<BatchInput>): Promise<SaveResult> {
+  const before = catalog.batches.find((b) => b.id === batchId);
+  if (!before) return { ok: false, error: "That batch no longer exists. Reload the page." };
+  const after: Batch = { ...before, ...patch };
+  put("batches", after);
+
+  const res = await run<BatchDbRow>((db) => db.from("batches").update(batchToRow(after)).eq("id", batchId).select().maybeSingle());
+  if (!res.ok) {
+    if (catalog.batches.find((b) => b.id === batchId) === after) put("batches", before);
+    return res;
+  }
+  put("batches", batchFromRow(res.data));
+
+  // Completing or cancelling closes the batch's sessions in the database.
+  // Read them back so this screen shows what the website now shows.
+  if (patch.status && patch.status !== before.status) {
+    try {
+      const db = await getClient();
+      const { data } = await db.from("sessions").select("*").eq("batch_id", batchId);
+      if (data) {
+        const fresh = new Map((data as SessionRow[]).map((r) => [r.id, sessionFromRow(r)]));
+        setCatalog({ sessions: catalog.sessions.map((s) => fresh.get(s.id) ?? s) });
+      }
+    } catch {
+      /* the next load will show them */
+    }
+  }
+  return { ok: true };
+}
+
+/** Refuses while anyone is enrolled — their history belongs to the batch. */
+export async function removeBatch(batchId: string): Promise<{ ok: true; blocked: boolean } | Failure> {
+  if (catalog.enrolments.some((e) => e.batchId === batchId)) return { ok: true, blocked: true };
+  const before = catalog;
+  setCatalog({
+    batches: catalog.batches.filter((b) => b.id !== batchId),
+    sessions: catalog.sessions.filter((s) => s.batchId !== batchId),
+  });
+
+  const res = await run<{ id: string }[]>((db) => db.from("batches").delete().eq("id", batchId).select("id"), NOT_DELETED);
+  if (res.ok) return { ok: true, blocked: false };
+
+  setCatalog({ batches: before.batches, sessions: before.sessions });
+  return res.error === IN_USE ? { ok: true, blocked: true } : res;
 }
 
 /* ------------------------------ sessions ----------------------------- */
 
-export async function createSession(input: SessionInput): Promise<SaveResult> {
+export async function createSession(input: SessionInput, link?: Omit<SessionLink, "sessionId">): Promise<SaveResult> {
   const session: Session = { ...input, id: uuid(), createdAt: new Date().toISOString() };
-  setCatalog({ ...catalog, sessions: [...catalog.sessions, session] });
+  setCatalog({ sessions: [...catalog.sessions, session] });
 
   const res = await run<SessionRow>((db) =>
     db.from("sessions").insert({ id: session.id, ...sessionToRow(session) }).select().single(),
   );
   if (!res.ok) {
-    setCatalog({ ...catalog, sessions: catalog.sessions.filter((s) => s.id !== session.id) });
+    setCatalog({ sessions: catalog.sessions.filter((s) => s.id !== session.id) });
     return res;
   }
-  putSession(sessionFromRow(res.data));
-  return { ok: true };
+  put("sessions", sessionFromRow(res.data));
+  return link ? saveSessionLink({ ...link, sessionId: session.id }) : { ok: true };
 }
 
-export async function updateSession(sessionId: string, patch: Partial<SessionInput>): Promise<SaveResult> {
+export async function updateSession(
+  sessionId: string,
+  patch: Partial<SessionInput>,
+  link?: Omit<SessionLink, "sessionId">,
+): Promise<SaveResult> {
   const before = catalog.sessions.find((s) => s.id === sessionId);
   if (!before) return { ok: false, error: "That session is no longer scheduled. Reload the page." };
   const after: Session = { ...before, ...patch };
-  putSession(after);
+  put("sessions", after);
 
   const res = await run<SessionRow>((db) =>
     db.from("sessions").update(sessionToRow(after)).eq("id", sessionId).select().maybeSingle(),
   );
   if (!res.ok) {
-    if (catalog.sessions.find((s) => s.id === sessionId) === after) putSession(before);
+    if (catalog.sessions.find((s) => s.id === sessionId) === after) put("sessions", before);
     return res;
   }
-  putSession(sessionFromRow(res.data));
+  put("sessions", sessionFromRow(res.data));
+  return link ? saveSessionLink({ ...link, sessionId }) : { ok: true };
+}
+
+/** Saves a session's Zoom details, or removes the row when every field is
+ *  blank — an empty row would read as "link set" to anything counting them. */
+export async function saveSessionLink(link: SessionLink): Promise<SaveResult> {
+  const clean: SessionLink = {
+    sessionId: link.sessionId,
+    joinUrl: link.joinUrl.trim(),
+    meetingId: link.meetingId.trim(),
+    passcode: link.passcode.trim(),
+    recordingUrl: link.recordingUrl.trim(),
+  };
+  const empty = !clean.joinUrl && !clean.meetingId && !clean.passcode && !clean.recordingUrl;
+  const before = catalog.sessionLinks;
+  setCatalog({
+    sessionLinks: [...before.filter((l) => l.sessionId !== clean.sessionId), ...(empty ? [] : [clean])],
+  });
+
+  const had = before.some((l) => l.sessionId === clean.sessionId);
+  if (empty && !had) return { ok: true };
+
+  const res = empty
+    ? await run<{ session_id: string }[]>((db) =>
+        db.from("session_links").delete().eq("session_id", clean.sessionId).select("session_id"), NOT_DELETED)
+    : await run<SessionLinkRow>((db) =>
+        db.from("session_links").upsert(sessionLinkToRow(clean), { onConflict: "session_id" }).select().single());
+  if (!res.ok) {
+    setCatalog({ sessionLinks: before });
+    return { ok: false, error: `The session was saved, but its Zoom details were not: ${res.error}` };
+  }
   return { ok: true };
 }
 
-/** Refuses while anyone is booked on it — here, or in the database. */
-export async function removeSession(sessionId: string): Promise<{ ok: true; blocked: boolean } | Failure> {
-  if (readLocal().enrolments.some((e) => e.sessionId === sessionId)) return { ok: true, blocked: true };
-  const session = catalog.sessions.find((s) => s.id === sessionId);
-  if (!session) return { ok: true, blocked: false };
-  setCatalog({ ...catalog, sessions: catalog.sessions.filter((s) => s.id !== sessionId) });
+export async function removeSession(sessionId: string): Promise<SaveResult> {
+  const before = catalog;
+  if (!before.sessions.some((s) => s.id === sessionId)) return { ok: true };
+  setCatalog({
+    sessions: before.sessions.filter((s) => s.id !== sessionId),
+    sessionLinks: before.sessionLinks.filter((l) => l.sessionId !== sessionId),
+  });
 
   const res = await run<{ id: string }[]>((db) => db.from("sessions").delete().eq("id", sessionId).select("id"), NOT_DELETED);
-  if (res.ok) return { ok: true, blocked: false };
+  if (res.ok) return { ok: true };
 
-  if (!catalog.sessions.some((s) => s.id === sessionId)) setCatalog({ ...catalog, sessions: [...catalog.sessions, session] });
-  return res.error === IN_USE ? { ok: true, blocked: true } : res;
+  setCatalog({ sessions: before.sessions, sessionLinks: before.sessionLinks });
+  return res;
 }
 
 /* ----------------------------- enrolments ---------------------------- */
 
-export function createEnrolment(input: Omit<Enrolment, "id" | "createdAt">): Enrolment {
-  const enrolment: Enrolment = { ...input, id: id("e"), createdAt: new Date().toISOString() };
-  const d = readLocal();
-  writeLocal({ ...d, enrolments: [enrolment, ...d.enrolments] });
-  return enrolment;
+export async function createEnrolment(input: EnrolmentInput): Promise<{ ok: true; enrolment: Enrolment } | Failure> {
+  const enrolment: Enrolment = {
+    ...input,
+    id: uuid(),
+    userId: null,
+    claimCode: "",
+    paidAt: input.status === "paid" ? new Date().toISOString() : null,
+    cancelledAt: null,
+    linkedAt: null,
+    completedAt: null,
+    certificateSentAt: null,
+    toolkitSentAt: null,
+    createdAt: new Date().toISOString(),
+  };
+  setCatalog({ enrolments: [enrolment, ...catalog.enrolments] });
+
+  const res = await run<EnrolmentRow>((db) =>
+    db.from("enrolments").insert({ id: enrolment.id, ...enrolmentToRow(enrolment) }).select().single(),
+  );
+  if (!res.ok) {
+    setCatalog({ enrolments: catalog.enrolments.filter((e) => e.id !== enrolment.id) });
+    return res;
+  }
+  const saved = enrolmentFromRow(res.data);
+  put("enrolments", saved);
+  return { ok: true, enrolment: saved };
 }
 
-export function markPaid(enrolmentId: string, paid = true) {
-  const d = readLocal();
-  writeLocal({ ...d, enrolments: d.enrolments.map((e) => (e.id === enrolmentId ? { ...e, paid } : e)) });
+export async function updateEnrolment(enrolmentId: string, patch: Partial<EnrolmentInput>): Promise<SaveResult> {
+  const before = catalog.enrolments.find((e) => e.id === enrolmentId);
+  if (!before) return { ok: false, error: "That enrolment no longer exists. Reload the page." };
+  const after: Enrolment = { ...before, ...patch };
+  put("enrolments", after);
+
+  const res = await run<EnrolmentRow>((db) =>
+    db.from("enrolments").update(enrolmentToRow(after)).eq("id", enrolmentId).select().maybeSingle(),
+  );
+  if (!res.ok) {
+    if (catalog.enrolments.find((e) => e.id === enrolmentId) === after) put("enrolments", before);
+    return res;
+  }
+  put("enrolments", enrolmentFromRow(res.data));
+  return { ok: true };
 }
 
-export function removeEnrolment(enrolmentId: string) {
-  const d = readLocal();
-  writeLocal({ ...d, enrolments: d.enrolments.filter((e) => e.id !== enrolmentId) });
+/** Paid, back to pending, or cancelled. The database stamps when and by whom. */
+export const setEnrolmentStatus = (enrolmentId: string, next: EnrolmentStatus) =>
+  updateEnrolment(enrolmentId, { status: next });
+
+/* --------------------------- module unlocks -------------------------- */
+
+/** Opens modules for everyone in a batch, typically after a live session. */
+export async function unlockModules(batchId: string, moduleIds: string[], afterSessionId: string | null): Promise<SaveResult> {
+  const fresh = moduleIds.filter((m) => !catalog.moduleUnlocks.some((u) => u.batchId === batchId && u.moduleId === m));
+  if (!fresh.length) return { ok: true };
+  const now = new Date().toISOString();
+  const added: ModuleUnlock[] = fresh.map((moduleId) => ({ batchId, moduleId, unlockedAt: now, afterSessionId }));
+  const before = catalog.moduleUnlocks;
+  setCatalog({ moduleUnlocks: [...before, ...added] });
+
+  const res = await run<ModuleUnlockRow[]>((db) =>
+    db.from("batch_module_unlocks")
+      .insert(added.map((u) => ({ batch_id: u.batchId, module_id: u.moduleId, after_session_id: u.afterSessionId })))
+      .select(),
+  );
+  if (!res.ok) {
+    setCatalog({ moduleUnlocks: before });
+    return res;
+  }
+  return { ok: true };
+}
+
+/** Closes a module again for the batch — for one opened by mistake. */
+export async function relockModule(batchId: string, moduleId: string): Promise<SaveResult> {
+  const before = catalog.moduleUnlocks;
+  setCatalog({ moduleUnlocks: before.filter((u) => !(u.batchId === batchId && u.moduleId === moduleId)) });
+  const res = await run<{ module_id: string }[]>((db) =>
+    db.from("batch_module_unlocks").delete().eq("batch_id", batchId).eq("module_id", moduleId).select("module_id"),
+    NOT_DELETED,
+  );
+  if (!res.ok) {
+    setCatalog({ moduleUnlocks: before });
+    return res;
+  }
+  return { ok: true };
+}
+
+/** Whether a module is open for a batch: released on enrolment, or unlocked. */
+export const isModuleOpen = (d: AdminData, batchId: string, module: { id: string; release?: string }) =>
+  module.release === "enrolment" || d.moduleUnlocks.some((u) => u.batchId === batchId && u.moduleId === module.id);
+
+/** A learner's progress on a course, if they have an account and have started. */
+export function progressFor(d: AdminData, enrolment: Enrolment): LearnerProgress | null {
+  if (!enrolment.userId) return null;
+  const slug = d.courses.find((c) => c.id === enrolment.courseId)?.slug;
+  return d.progress.find((p) => p.userId === enrolment.userId && p.courseSlug === slug) ?? null;
 }
 
 /* ------------------------------ derived ------------------------------ */
 
-/** Seats taken on a session, counting a corporate booking's full block. */
-export const seatsTaken = (d: AdminData, sessionId: string) =>
-  d.enrolments.filter((e) => e.sessionId === sessionId).reduce((a, e) => a + e.seats, 0);
+/** Everyone holding a seat on a batch: paid, or still to pay. */
+export const activeEnrolments = (d: AdminData, batchId: string) =>
+  d.enrolments.filter((e) => e.batchId === batchId && e.status !== "cancelled");
 
-export const seatsLeft = (d: AdminData, session: Session) =>
-  Math.max(0, session.seats - seatsTaken(d, session.id));
+export const batchTaken = (d: AdminData, batchId: string) =>
+  activeEnrolments(d, batchId).reduce((a, e) => a + e.seats, 0);
 
-/** Status is derived from real occupancy, so it can never drift from the data.
- *  Draft and closed are editorial states and are left alone. */
-export function effectiveStatus(d: AdminData, session: Session): SessionStatusLabel {
-  if (session.status === "draft") return "Draft";
-  if (session.status === "closed") return "Closed";
-  const taken = seatsTaken(d, session.id);
-  if (taken >= session.seats) return "Full";
-  if (taken / Math.max(1, session.seats) >= 0.75) return "Filling";
-  return "Open";
+export const batchSeatsLeft = (d: AdminData, batch: Batch) => Math.max(0, batch.seats - batchTaken(d, batch.id));
+
+export const sessionsOf = (d: AdminData, batchId: string) => d.sessions.filter((s) => s.batchId === batchId);
+
+export const linkFor = (d: AdminData, sessionId: string) => d.sessionLinks.find((l) => l.sessionId === sessionId) ?? null;
+
+/** First and last dated session, falling back to the batch's own dates. */
+export function batchWindow(d: AdminData, batch: Batch): { from: string | null; to: string | null } {
+  const days = sessionsOf(d, batch.id).map((s) => s.startsOn).filter((x): x is string => Boolean(x)).sort();
+  return { from: days[0] ?? batch.startsOn, to: days[days.length - 1] ?? batch.endsOn };
 }
 
-export type SessionStatusLabel = "Open" | "Filling" | "Full" | "Draft" | "Closed";
+/** Batches that can take someone: not finished, open for enrolment. */
+export const enrollableBatches = (d: AdminData) =>
+  d.batches.filter((b) => (b.status === "upcoming" || b.status === "running") && b.enrolmentOpen);
+
 
 /**
- * Empties this browser's own records — facilitators, enrolments and the
- * certificate settings. Courses and sessions belong to the database, and to
- * the website, so a reset never touches them.
+ * Empties this browser's own records — facilitators and the certificate
+ * settings. Everything in the database is left alone.
  */
 export function resetAll() {
   writeLocal(BLANK());
-  if (status.state === "ready") repointLegacy();
 }

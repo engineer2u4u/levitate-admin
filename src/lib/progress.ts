@@ -24,25 +24,12 @@ export type ProgressRow = {
 /**
  * The course outlines the admin needs to turn a list of finished item ids into
  * "4 of 9". Kept here rather than fetched: the learner site owns the content,
- * and duplicating the shape — not the copy — is enough to report on it. When
- * courses move into the database this reads from there instead.
+ * and duplicating the shape — not the copy — is enough to report on it.
+ *
+ * Empty since the demo course, the only self-paced one, was removed (0012).
+ * A journey on a course with no outline here shows its slug and a raw count.
  */
-export const COURSE_OUTLINES: Record<string, { title: string; items: { id: string; title: string; module: string; kind: string }[] }> = {
-  "demo-course": {
-    title: "Demo · Workplace Facilitation Essentials",
-    items: [
-      { id: "m1-i1", title: "Course overview", module: "Module 1 · Getting started", kind: "reading" },
-      { id: "m1-i2", title: "How the platform works", module: "Module 1 · Getting started", kind: "video" },
-      { id: "m1-i3", title: "Check your understanding", module: "Module 1 · Getting started", kind: "quiz" },
-      { id: "m2-i1", title: "Preparing the room", module: "Module 2 · Facilitation basics", kind: "reading" },
-      { id: "m2-i2", title: "Opening a session", module: "Module 2 · Facilitation basics", kind: "reading" },
-      { id: "m2-i3", title: "Handling difficult questions", module: "Module 2 · Facilitation basics", kind: "video" },
-      { id: "m2-i4", title: "Module 2 knowledge check", module: "Module 2 · Facilitation basics", kind: "quiz" },
-      { id: "m3-i1", title: "Closing a session", module: "Module 3 · Assessment and close", kind: "reading" },
-      { id: "m3-i2", title: "Final assessment", module: "Module 3 · Assessment and close", kind: "quiz" },
-    ],
-  },
-};
+export const COURSE_OUTLINES: Record<string, { title: string; items: { id: string; title: string; module: string; kind: string }[] }> = {};
 
 export const outlineFor = (slug: string) => COURSE_OUTLINES[slug] ?? null;
 
