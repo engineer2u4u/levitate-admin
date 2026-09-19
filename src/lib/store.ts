@@ -138,7 +138,7 @@ const STARTER_FACILITATORS: Facilitator[] = [
     title: "Founder & Managing Partner, Levitate PeopleSoft",
     description:
       "Parichita brings over 15 years of global HR, leadership development and workplace culture experience across diverse teams and business environments. " +
-      "Her work spans HR business partnering, leadership enablement, performance, employee relations, workplace compliance, PoSH, POCSO, wellbeing, DEI and people advisory. " +
+      "Her work spans HR business partnering, leadership enablement, performance, employee relations, workplace compliance, PoSH, POCSO, wellbeing, DEIB and people advisory. " +
       "At Levitate PeopleSoft she leads the organisation's next phase of growth through globally designed, practice-led certification programs.",
     imageUrl: "https://levitatepeoplesoft.com/assets/parichita-kotnala.jpg",
     createdAt: "2026-09-14T00:00:00.000Z",
