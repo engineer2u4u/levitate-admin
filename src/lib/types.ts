@@ -527,8 +527,8 @@ export function batchCardFor(
   return {
     // Hidden courses are deliberately off every public list, this one included.
     show: c.status === "live" && !c.hidden,
-    statusLabel: enrolling ? "Enrolling" : "Dates coming soon",
-    cta: enrolling ? "Enrol for this batch" : "Join the waitlist",
+    statusLabel: enrolling ? "Enrolling" : "Enquiries open",
+    cta: enrolling ? "Enrol for this batch" : "Enquire about this batch",
     tag: b.tag.trim() || name || c.category.trim(),
     title: b.title.trim() || name,
     short: b.short.trim() || name,

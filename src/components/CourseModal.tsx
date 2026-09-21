@@ -151,7 +151,7 @@ export default function CourseModal({ course, onClose }: { course: Course; onClo
           label="Site status"
           hint={siteStatus === "enrolling"
             ? "The batch card reads Enrolling, and its button takes bookings."
-            : "The batch card reads Dates coming soon, and its button joins the waitlist."}
+            : "The batch card reads Enquiries open, and its button asks them to enquire."}
         >
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
             {SITE_STATUSES.map((s) => (

@@ -2,46 +2,66 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { inr } from "@/lib/format";
-import { removeCourse } from "@/lib/store";
+import { updateCourse } from "@/lib/store";
 import { useAdminData, useCatalogStatus } from "@/lib/useStore";
-import type { Course } from "@/lib/types";
+import { batchCardFor, type Course } from "@/lib/types";
 import BatchModal from "./BatchModal";
 import CatalogState from "./CatalogState";
-import CourseModal from "./CourseModal";
-import { EmptyState, Pill, card } from "./ui";
+import { EmptyState, card } from "./ui";
 import { useToast } from "./AdminShell";
 import { useCanWrite } from "./AuthGate";
+
+/** "2026-10-03" → "3 Oct 2026", read from its parts so no time zone can shift the day. */
+const longDate = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1]} ${y}`;
+};
 
 export default function CoursesView() {
   const data = useAdminData();
   const status = useCatalogStatus();
   const toast = useToast();
   const canWrite = useCanWrite();
-  const [editing, setEditing] = useState<Course | null>(null);
   const [batchFor, setBatchFor] = useState<string | null>(null);
+  const [switching, setSwitching] = useState<string | null>(null);
 
-  const tone = (s: Course["status"]) => (s === "live" ? "good" : s === "draft" ? "neutral" : "bad");
-
-  const onDelete = async (c: Course) => {
-    const batches = data.batches.filter((b) => b.courseId === c.id).length;
-    const message = batches
-      ? `${c.title} has ${batches} batch${batches === 1 ? "" : "es"}. It will be archived rather than deleted, so their history stays intact. Continue?`
-      : `Delete ${c.title}? This cannot be undone.`;
-    if (!confirm(message)) return;
-    const res = await removeCourse(c.id);
-    if (!res.ok) {
-      toast(res.error);
-      return;
-    }
-    toast(res.archived ? "Course archived — enrolment history kept" : "Course deleted");
+  /**
+   * Live: published, and the website offers enrolment and takes payment for
+   * its open batch. Paused: still on the website, but with an enquiry button
+   * instead, and the payment server refuses to take money for it.
+   *
+   * Either way the course stays published — pausing is "not taking bookings
+   * right now", not "take it down". The Upcoming Batches card follows, since
+   * its status and button come from the same switch.
+   */
+  const setLive = async (c: Course, live: boolean) => {
+    // A fee "on request" has nothing to pay, so the site keeps its enquiry
+    // button whatever this says — better to say so than let it look broken.
+    const payable = !c.priceOnRequest && c.pricePaise > 0;
+    if (
+      live &&
+      !confirm(
+        payable
+          ? `Put ${c.title} live? The website will show "Enrol · Pay securely" and take real payments for its open batch.`
+          : `${c.title} has its fee set to "on request", so the website will keep showing an enquiry button even when live. Put it live anyway?`,
+      )
+    ) return;
+    const siteStatus = live ? "enrolling" : "waitlist";
+    setSwitching(c.id);
+    const res = await updateCourse(c.id, {
+      status: "live",
+      siteStatus,
+      batch: batchCardFor({ ...c, status: "live", siteStatus }),
+    });
+    setSwitching(null);
+    toast(res.ok ? (live ? `${c.short || c.title} is live — open for enrolment` : `${c.short || c.title} paused — enquiries only`) : res.error);
   };
 
   return (
     <div style={{ padding: "22px 26px 60px", display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
         <div style={{ font: "500 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>
-          {data.courses.length} course{data.courses.length === 1 ? "" : "s"} · {data.sessions.length} scheduled session{data.sessions.length === 1 ? "" : "s"}
+          {data.courses.length} course{data.courses.length === 1 ? "" : "s"}
         </div>
       </div>
 
@@ -50,88 +70,74 @@ export default function CoursesView() {
       ) : data.courses.length === 0 ? (
         <EmptyState
           title="No courses yet"
-          body="The catalogue is the website's, added to the database rather than typed in here. Once a course is in it, this screen edits its start, syllabus, status and brochure."
+          body="The catalogue is the website's, added to the database rather than typed in here. Once a course is in it, its batches are run from this screen."
         />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 12 }}>
+        <div style={{ ...card, overflow: "hidden" }}>
           {data.courses.map((c) => {
-            const current = data.batches.filter((b) => b.courseId === c.id && (b.status === "upcoming" || b.status === "running"));
-            const held = data.enrolments.filter((e) => e.courseId === c.id && e.status !== "cancelled");
-            const enrolled = held.reduce((a, e) => a + e.seats, 0);
-            const revenue = held.filter((e) => e.status === "paid").reduce((a, e) => a + e.amountPaise, 0);
-            const lead = data.facilitators.find((f) => f.id === c.facilitatorId);
+            // Just the course, how many runs it has had, and when the next one
+            // starts; everything else is one click away under Batches.
+            const batches = data.batches.filter((b) => b.courseId === c.id && b.status !== "cancelled");
+            const next = batches
+              .filter((b) => (b.status === "upcoming" || b.status === "running") && b.startsOn)
+              .sort((a, b) => (a.startsOn ?? "").localeCompare(b.startsOn ?? ""))[0];
             return (
-              // One course per row: banner on the left, details beside it. On a
-              // narrow screen the two wrap, banner above.
-              <div key={c.id} style={{ ...card, overflow: "hidden", display: "flex", flexWrap: "wrap" }}>
-                {c.bannerUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={c.bannerUrl} alt="" style={{ display: "block", flex: "1 1 260px", maxWidth: "100%", minHeight: 150, objectFit: "cover", background: "var(--surface)" }} />
-                )}
-                <div style={{ flex: "999 1 420px", minWidth: 0, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ font: "700 10px 'Plus Jakarta Sans',sans-serif", color: "var(--teal)", letterSpacing: ".11em", textTransform: "uppercase" }}>{c.category}</div>
-                    <div style={{ font: "700 15px/1.25 'Plus Jakarta Sans',sans-serif", color: "var(--ink)", marginTop: 5 }}>{c.title}</div>
-                  </div>
-                  <Pill tone={tone(c.status)}>{c.status}</Pill>
-                </div>
-
-                {c.description && (
-                  <div style={{ font: "400 11.5px/1.6 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>{c.description}</div>
-                )}
-
-                {/* The offering at a glance — what the fee buys and who leads it,
-                    separate from the tiles below which are counts. */}
-                <div style={{ font: "600 10.5px/1.6 'Plus Jakarta Sans',sans-serif", color: "var(--body)", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <span>{current.length ? `${current.length} current batch${current.length === 1 ? "" : "es"}` : "No batch running"}</span>
-                  {c.liveSessionCount > 0 && <span style={{ color: "var(--muted)" }}>·</span>}
-                  {c.liveSessionCount > 0 && <span>{c.liveSessionCount} live session{c.liveSessionCount === 1 ? "" : "s"} included</span>}
-                  {lead && <span style={{ color: "var(--muted)" }}>·</span>}
-                  {lead && <span>{lead.name}</span>}
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 10, borderTop: "1px solid var(--line-soft)", paddingTop: 11 }}>
-                  {[
-                    { k: "Fee", v: inr(c.pricePaise) },
-                    { k: "Tenure", v: c.tenure || c.duration },
-                    { k: "Modules", v: String(c.modules.length) },
-                    { k: "Enrolled", v: String(enrolled) },
-                  ].map((s) => (
-                    <div key={s.k}>
-                      <div style={{ font: "700 9px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", letterSpacing: ".09em", textTransform: "uppercase" }}>{s.k}</div>
-                      <div style={{ font: "700 13px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)", marginTop: 3 }}>{s.v}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {revenue > 0 && (
-                  <div style={{ font: "600 10.5px 'Plus Jakarta Sans',sans-serif", color: "#136f6a" }}>{inr(revenue)} collected</div>
-                )}
-
-                {canWrite && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button type="button" className="btn btn-soft" onClick={() => setBatchFor(c.id)}>+ New batch</button>
-                    <Link href={`/batches/?course=${c.slug}`} className="btn btn-ghost" style={{ textDecoration: "none" }}>Batches</Link>
-                    <button type="button" className="btn btn-ghost" onClick={() => setEditing(c)}>Edit course</button>
-                    <button
-                      type="button"
-                      onClick={() => void onDelete(c)}
-                      style={{ cursor: "pointer", border: "none", background: "none", font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", padding: "0 4px" }}
-                    >
-                      {data.batches.some((b) => b.courseId === c.id) ? "Archive" : "Delete"}
-                    </button>
-                  </div>
-                )}
+            <div
+              key={c.id}
+              className="row-hover"
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", padding: "13px 18px", borderBottom: "1px solid var(--surface)" }}
+            >
+              <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+                <div style={{ font: "700 13px/1.35 'Plus Jakarta Sans',sans-serif", color: "var(--ink)" }}>{c.title}</div>
+                <div style={{ font: "500 11px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginTop: 3 }}>
+                  {batches.length} batch{batches.length === 1 ? "" : "es"}
+                  {" · "}
+                  {next?.startsOn ? `Next starts ${longDate(next.startsOn)}` : "No upcoming batch"}
                 </div>
               </div>
+              {canWrite && (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button type="button" className="btn btn-soft" onClick={() => setBatchFor(c.id)}>+ New batch</button>
+                  <Link href={`/batches/?course=${c.slug}`} className="btn btn-ghost" style={{ textDecoration: "none" }}>Batches</Link>
+                  <LiveSwitch
+                    live={c.status === "live" && c.siteStatus === "enrolling"}
+                    busy={switching === c.id}
+                    onChange={(live) => void setLive(c, live)}
+                  />
+                </div>
+              )}
+            </div>
             );
           })}
         </div>
       )}
 
-      {editing && <CourseModal course={editing} onClose={() => setEditing(null)} />}
       {batchFor && <BatchModal courseId={batchFor} onClose={() => setBatchFor(null)} />}
     </div>
+  );
+}
+
+/** An on/off switch labelled with what the website is doing now. */
+function LiveSwitch({ live, busy, onChange }: { live: boolean; busy: boolean; onChange: (live: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={live}
+      disabled={busy}
+      onClick={() => onChange(!live)}
+      title={live ? "Live: open for enrolment. Click to pause (enquiries only)." : "Paused: enquiries only. Click to go live."}
+      style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: busy ? "wait" : "pointer", border: "none", background: "none", padding: "4px 2px", opacity: busy ? 0.6 : 1 }}
+    >
+      <span
+        aria-hidden
+        style={{ position: "relative", width: 34, height: 19, borderRadius: 999, background: live ? "#2fc4bc" : "#c9d6e0", transition: "background .15s ease", flex: "none" }}
+      >
+        <span style={{ position: "absolute", top: 2, left: live ? 17 : 2, width: 15, height: 15, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(10,27,51,.25)", transition: "left .15s ease" }} />
+      </span>
+      <span style={{ font: "700 11px 'Plus Jakarta Sans',sans-serif", color: live ? "#136f6a" : "var(--muted)", minWidth: 42, textAlign: "left" }}>
+        {live ? "Live" : "Paused"}
+      </span>
+    </button>
   );
 }
