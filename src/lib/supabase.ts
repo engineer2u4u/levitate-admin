@@ -3,6 +3,7 @@ import { BASE_PATH } from "./basePath";
 import type {
   Batch,
   BatchInput,
+  Certificate,
   Course,
   CourseInput,
   Enrolment,
@@ -42,6 +43,16 @@ export function getClient(): Promise<SupabaseClient> {
         // requested on a laptop would fail — which is exactly how invites get
         // opened.
         flowType: "implicit",
+        // This portal's own session, kept apart from the LMS's.
+        //
+        // The portal is served from /admin-panel on the same domain as the
+        // website, and same domain means one localStorage. On Supabase's
+        // default key both apps read and wrote a single session: signing in
+        // here made the LMS think the admin was a learner, and signing out of
+        // either ended both. With a key each they are two independent logins,
+        // so an admin here and a learner on the website can be signed in at
+        // the same time. Changing this string signs everyone out once.
+        storageKey: "lvt.admin.auth",
       },
     }),
   );
@@ -125,6 +136,31 @@ export type SessionLinkRow = {
 export type ModuleUnlockRow = {
   batch_id: string; module_id: string; unlocked_at: string; after_session_id: string | null;
 };
+
+export type CertificateRow = {
+  id: string; cert_no: string; enrolment_id: string; user_id: string | null;
+  course_id: string; batch_id: string | null;
+  recipient_name: string; course_title: string; hours: string;
+  completed_on: string; issued_at: string; issued_by: string | null;
+  revoked_at: string | null; revoked_reason: string | null;
+};
+
+export const certificateFromRow = (r: CertificateRow): Certificate => ({
+  id: r.id,
+  certNo: r.cert_no,
+  enrolmentId: r.enrolment_id,
+  userId: r.user_id,
+  courseId: r.course_id,
+  batchId: r.batch_id,
+  recipientName: r.recipient_name,
+  courseTitle: r.course_title,
+  hours: r.hours ?? "",
+  completedOn: r.completed_on,
+  issuedAt: r.issued_at,
+  issuedBy: r.issued_by,
+  revokedAt: r.revoked_at,
+  revokedReason: r.revoked_reason ?? "",
+});
 
 export type EnrolmentRow = {
   id: string; user_id: string | null; claim_code: string | null; name: string; email: string; phone: string;

@@ -340,6 +340,33 @@ export type EnrolmentStatus = "pending" | "paid" | "cancelled";
 
 export type PaymentMethod = "razorpay" | "link" | "invoice" | "offline";
 
+/**
+ * A certificate that has actually been issued — the register behind the word
+ * "verifiable" on the plate.
+ *
+ * The name and course title are snapshots taken when it was issued, not joins:
+ * a learner who later corrects their name, or a course that gets retitled,
+ * must not silently rewrite a certificate already in someone's hands.
+ */
+export type Certificate = {
+  id: string;
+  /** "2026-09-001" — sequential within the month it was issued. */
+  certNo: string;
+  enrolmentId: string;
+  userId: string | null;
+  courseId: string;
+  batchId: string | null;
+  recipientName: string;
+  courseTitle: string;
+  hours: string;
+  completedOn: string;
+  issuedAt: string;
+  /** Null when the learner issued it themselves on finishing the course. */
+  issuedBy: string | null;
+  revokedAt: string | null;
+  revokedReason: string;
+};
+
 export type Enrolment = {
   id: string;
   /** The learner's LMS account, once they have claimed this enrolment with
@@ -422,6 +449,7 @@ export type AdminData = {
   enrolments: Enrolment[];
   moduleUnlocks: ModuleUnlock[];
   progress: LearnerProgress[];
+  certificates: Certificate[];
 };
 
 /** The part of `AdminData` held in this browser. Everything else is the

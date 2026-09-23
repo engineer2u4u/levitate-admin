@@ -53,7 +53,7 @@ const NAV = [
 
 const TITLES: Record<string, [string, string]> = {
   "/enquiries": ["Enquiries", "Everything sent from the website's enquiry forms"],
-  "/enrolments": ["Enrolments", "Who is enrolled, and what they owe"],
+  "/enrolments": ["Enrolments", "Who is enrolled, what they owe, and who signed up without taking a seat"],
   "/progress": ["Learner progress", "How far each learner has got, item by item"],
   "/courses": ["Courses", "Create and maintain the course catalogue"],
   "/batches": ["Batches", "Each run of a course — its dates, sessions and learners, and the ones already finished"],

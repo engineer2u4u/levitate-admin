@@ -6,6 +6,7 @@ import type {
   CertificateSettings,
   Course,
   CourseInput,
+  Certificate,
   Enrolment,
   EnrolmentInput,
   EnrolmentStatus,
@@ -24,6 +25,7 @@ import {
   batchToRow,
   courseFromRow,
   coursePatchToRow,
+  certificateFromRow,
   enrolmentFromRow,
   enrolmentToRow,
   getClient,
@@ -32,6 +34,7 @@ import {
   sessionLinkToRow,
   sessionToRow,
   type BatchDbRow,
+  type CertificateRow,
   type CourseRow,
   type EnrolmentRow,
   type ModuleUnlockRow,
@@ -71,6 +74,7 @@ export const EMPTY: AdminData = {
   enrolments: [],
   moduleUnlocks: [],
   progress: [],
+  certificates: [],
 };
 
 /** What a browser starts with: the certificate defaults and nothing else. */
@@ -81,9 +85,9 @@ export type CatalogStatus = { state: "idle" | "loading" | "ready" | "error"; err
 
 export const CATALOG_IDLE: CatalogStatus = { state: "idle", error: "" };
 
-type Catalog = Pick<AdminData, "courses" | "batches" | "sessions" | "sessionLinks" | "enrolments" | "moduleUnlocks" | "progress">;
+type Catalog = Pick<AdminData, "courses" | "batches" | "sessions" | "sessionLinks" | "enrolments" | "moduleUnlocks" | "progress" | "certificates">;
 
-const NO_CATALOG: Catalog = { courses: [], batches: [], sessions: [], sessionLinks: [], enrolments: [], moduleUnlocks: [], progress: [] };
+const NO_CATALOG: Catalog = { courses: [], batches: [], sessions: [], sessionLinks: [], enrolments: [], moduleUnlocks: [], progress: [], certificates: [] };
 
 let local: LocalData | null = null;
 let catalog: Catalog = NO_CATALOG;
@@ -266,6 +270,7 @@ function setCatalog(next: Partial<Catalog>) {
     enrolments: [...merged.enrolments].sort(byNewest),
     moduleUnlocks: merged.moduleUnlocks,
     progress: merged.progress,
+    certificates: merged.certificates,
   };
   emit();
 }
@@ -297,9 +302,10 @@ export async function loadCatalog(): Promise<void> {
 
     // Unlocks and progress enrich the batch screen but are not needed to run
     // the rest, so a database that has not had 0017 yet still loads.
-    const [unlocks, progress] = await Promise.all([
+    const [unlocks, progress, certificates] = await Promise.all([
       db.from("batch_module_unlocks").select("*"),
       db.from("course_progress_admin").select("user_id, course_slug, completed_items, completed_at, updated_at"),
+      db.from("certificates").select("*").order("issued_at", { ascending: false }),
     ]);
     if (mine !== generation) return;
     setCatalog({
@@ -315,7 +321,8 @@ export async function loadCatalog(): Promise<void> {
         afterSessionId: r.after_session_id ?? null,
       })),
       progress: progress.error ? [] : ((progress.data ?? []) as {
-        user_id: string; course_slug: string; completed_items: string[] | null; completed_at: string | null; updated_at: string;
+        user_id: string; course_slug: string; completed_items: string[] | null;
+        completed_at: string | null; updated_at: string;
       }[]).map((r) => ({
         userId: r.user_id,
         courseSlug: r.course_slug,
@@ -323,6 +330,9 @@ export async function loadCatalog(): Promise<void> {
         completedAt: r.completed_at ?? null,
         updatedAt: r.updated_at,
       })),
+      // Like unlocks and progress: a database without 0020 still loads, it
+      // just has no register to show yet.
+      certificates: certificates.error ? [] : ((certificates.data ?? []) as CertificateRow[]).map(certificateFromRow),
     });
     setStatus({ state: "ready", error: "" });
   } catch (e) {
@@ -364,6 +374,9 @@ function friendly({ message, code }: DbError): string {
   if (/batches_ends_after_starts|sessions_ends_after_starts/.test(message)) return "The end has to be after the start.";
   if (code === "23503") return IN_USE;
   if (code === "23505") return "That already exists. Reload the page and check.";
+  if (/admin_assign_learner|admin_unassign_learner|admin_reset_progress/.test(message)) {
+    return "This needs migration 0018 — run it in the Supabase SQL editor, then reload.";
+  }
   if (/does not exist|schema cache/i.test(message)) {
     return "The database is missing tables or columns this screen needs. Run migrations 0013, 0014 and 0015 in the Supabase SQL editor, then reload.";
   }
@@ -772,6 +785,161 @@ export async function updateEnrolment(enrolmentId: string, patch: Partial<Enrolm
 /** Paid, back to pending, or cancelled. The database stamps when and by whom. */
 export const setEnrolmentStatus = (enrolmentId: string, next: EnrolmentStatus) =>
   updateEnrolment(enrolmentId, { status: next });
+
+/* ----------------------- assigning accounts by hand ------------------ */
+
+/** Someone who signed up on the website: the pool a batch is assigned from. */
+export type LearnerAccount = { id: string; name: string; email: string; org: string; joinedAt: string };
+
+/**
+ * Every account on the LMS, newest first.
+ *
+ * Read straight from `profiles`, which only an admin may read in full — a
+ * viewer gets their own row back and so sees nobody to assign, which is the
+ * right answer for an account that cannot assign anyone anyway.
+ */
+export async function listLearnerAccounts(): Promise<LearnerAccount[]> {
+  const res = await run<{ id: string; name: string | null; email: string | null; org: string | null; created_at: string }[]>((db) =>
+    db.from("profiles")
+      .select("id, name, email, org, created_at")
+      // Learners only: people who signed up on the website. Portal accounts —
+      // admins and viewers — belong to Users, and the LMS refuses them a
+      // learner session anyway, so listing them here would only offer seats
+      // that could never be used.
+      .eq("role", "learner")
+      .order("created_at", { ascending: false }),
+    "No accounts found.",
+  );
+  if (!res.ok) return [];
+  return res.data.map((r) => ({
+    id: r.id,
+    email: r.email ?? "",
+    name: (r.name ?? "").trim() || (r.email ?? "").split("@")[0],
+    org: (r.org ?? "").trim(),
+    joinedAt: r.created_at,
+  }));
+}
+
+/**
+ * Gives an existing account paid access to a batch without a payment.
+ *
+ * For testing the learner side, and for a comped seat. The row it writes is
+ * marked `Admin`/`offline` so no report mistakes it for money received, and
+ * the database refuses this to anyone but an admin.
+ */
+export async function assignLearner(userId: string, batchId: string): Promise<{ ok: true; enrolment: Enrolment } | Failure> {
+  const res = await run<EnrolmentRow>((db) =>
+    db.rpc("admin_assign_learner", { p_user_id: userId, p_batch_id: batchId }).single(),
+  );
+  if (!res.ok) return res;
+
+  const saved = enrolmentFromRow(res.data);
+  // Re-assigning someone brings their old row back rather than adding one.
+  setCatalog({
+    enrolments: catalog.enrolments.some((e) => e.id === saved.id)
+      ? catalog.enrolments.map((e) => (e.id === saved.id ? saved : e))
+      : [saved, ...catalog.enrolments],
+  });
+  return { ok: true, enrolment: saved };
+}
+
+/**
+ * Takes an assigned seat away again.
+ *
+ * An enrolment that carries a Razorpay payment is cancelled instead of
+ * deleted — the seat frees either way, but the record of a real sale is not
+ * ours to erase. The database decides which happened and says so.
+ */
+export async function unassignLearner(enrolmentId: string): Promise<{ ok: true; outcome: "deleted" | "cancelled" } | Failure> {
+  const res = await run<"deleted" | "cancelled">((db) =>
+    db.rpc("admin_unassign_learner", { p_enrolment_id: enrolmentId }),
+  );
+  if (!res.ok) return res;
+
+  setCatalog(
+    res.data === "deleted"
+      ? { enrolments: catalog.enrolments.filter((e) => e.id !== enrolmentId) }
+      : {
+          enrolments: catalog.enrolments.map((e) =>
+            e.id === enrolmentId ? { ...e, status: "cancelled" as EnrolmentStatus, cancelledAt: new Date().toISOString() } : e,
+          ),
+        },
+  );
+  return { ok: true, outcome: res.data };
+}
+
+/* ------------------------------ certificates ------------------------- */
+
+/** The certificate issued against a seat, if there is one. */
+export const certificateFor = (d: AdminData, enrolmentId: string) =>
+  d.certificates.find((c) => c.enrolmentId === enrolmentId) ?? null;
+
+/**
+ * Issues a certificate for a seat, on the office's judgement.
+ *
+ * Unlike the learner's own route, completion is not checked here: an admin
+ * issuing for someone is the decision, and the database records who made it.
+ * Asking twice returns the certificate that already exists rather than
+ * minting a second number.
+ */
+export async function issueCertificate(
+  enrolmentId: string,
+  name?: string,
+  completedOn?: string,
+): Promise<{ ok: true; certificate: Certificate } | Failure> {
+  const res = await run<CertificateRow>((db) =>
+    db.rpc("admin_issue_certificate", {
+      p_enrolment_id: enrolmentId,
+      p_name: name?.trim() || null,
+      p_completed_on: completedOn || null,
+    }).single(),
+  );
+  if (!res.ok) return res;
+
+  const cert = certificateFromRow(res.data);
+  setCatalog({
+    certificates: catalog.certificates.some((c) => c.id === cert.id)
+      ? catalog.certificates.map((c) => (c.id === cert.id ? cert : c))
+      : [cert, ...catalog.certificates],
+  });
+  return { ok: true, certificate: cert };
+}
+
+/**
+ * Withdraws a certificate without erasing it.
+ *
+ * The number stays in the register, so checking it answers "revoked" rather
+ * than "never existed" — which is the whole point of a number that claims to
+ * be verifiable.
+ */
+export async function revokeCertificate(certificateId: string, reason?: string): Promise<SaveResult> {
+  const res = await run<CertificateRow>((db) =>
+    db.rpc("admin_revoke_certificate", { p_cert_id: certificateId, p_reason: reason?.trim() ?? "" }).single(),
+  );
+  if (!res.ok) return res;
+
+  const cert = certificateFromRow(res.data);
+  setCatalog({ certificates: catalog.certificates.map((c) => (c.id === cert.id ? cert : c)) });
+  return { ok: true };
+}
+
+/**
+ * Wipes what an account has read on one course, so it can be walked again.
+ *
+ * Progress lives on the account rather than the seat, so this is separate
+ * from assigning and unassigning: removing someone keeps their progress on
+ * purpose, and only this throws it away. Returns how many lessons were
+ * cleared.
+ */
+export async function resetProgress(userId: string, courseSlug: string): Promise<{ ok: true; cleared: number } | Failure> {
+  const res = await run<number>((db) =>
+    db.rpc("admin_reset_progress", { p_user_id: userId, p_course_slug: courseSlug }),
+  );
+  if (!res.ok) return res;
+
+  setCatalog({ progress: catalog.progress.filter((p) => !(p.userId === userId && p.courseSlug === courseSlug)) });
+  return { ok: true, cleared: res.data ?? 0 };
+}
 
 /* --------------------------- module unlocks -------------------------- */
 

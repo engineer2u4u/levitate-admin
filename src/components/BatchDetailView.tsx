@@ -15,10 +15,12 @@ import {
   removeSession,
   sessionsOf,
   setEnrolmentStatus,
+  unassignLearner,
   updateBatch,
 } from "@/lib/store";
 import { useAdminData, useCatalogStatus } from "@/lib/useStore";
 import type { BatchStatus, Enrolment, Session } from "@/lib/types";
+import AssignLearnerModal from "./AssignLearnerModal";
 import BatchModal from "./BatchModal";
 import ModuleUnlockPanel from "./ModuleUnlockPanel";
 import { batchTone, dateRange } from "./BatchesView";
@@ -77,6 +79,29 @@ function LearnerRow({ enrolment: e, canWrite }: { enrolment: Enrolment; canWrite
           ) : (
             <button type="button" disabled={busy} onClick={() => void change("pending", "Restored as pending")} style={textButton("var(--teal)")}>Restore</button>
           )}
+          {/* Takes the seat off the roster entirely — for a seat that was
+              assigned by hand. A paid one is cancelled instead, which the
+              database decides and reports back. */}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if (!confirm(`Remove ${e.name} from this batch? Their access ends. Lesson progress is kept in case they come back.`)) return;
+              setBusy(true);
+              const res = await unassignLearner(e.id);
+              setBusy(false);
+              toast(
+                !res.ok
+                  ? res.error
+                  : res.outcome === "deleted"
+                    ? `${e.name} removed from the batch`
+                    : `${e.name} paid for this seat, so the record was cancelled rather than deleted`,
+              );
+            }}
+            style={textButton("#b4453f")}
+          >
+            Remove
+          </button>
         </div>
       )}
     </div>
@@ -137,6 +162,7 @@ export default function BatchDetailView() {
 
   const [editing, setEditing] = useState(false);
   const [sessionModal, setSessionModal] = useState<Session | "new" | null>(null);
+  const [assigning, setAssigning] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const batch = data.batches.find((b) => b.id === id);
@@ -301,7 +327,12 @@ export default function BatchDetailView() {
               {active.length} enrolled{people.length > active.length ? ` · ${people.length - active.length} cancelled` : ""}
             </div>
           </div>
-          {canWrite && !finished && <button type="button" className="btn btn-dark" onClick={() => openEnrol({ batchId: batch.id })}>+ Enrol someone</button>}
+          {canWrite && !finished && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" className="btn btn-soft" onClick={() => setAssigning(true)}>Assign an account</button>
+              <button type="button" className="btn btn-dark" onClick={() => openEnrol({ batchId: batch.id })}>+ Enrol someone</button>
+            </div>
+          )}
         </div>
         {people.length === 0 ? (
           <div style={{ padding: "22px 16px", textAlign: "center", font: "500 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>Nobody enrolled yet.</div>
@@ -316,6 +347,7 @@ export default function BatchDetailView() {
       </div>
 
       {editing && <BatchModal batch={batch} onClose={() => setEditing(false)} />}
+      {assigning && <AssignLearnerModal batch={batch} onClose={() => setAssigning(false)} />}
       {sessionModal && (
         <SessionModal session={sessionModal === "new" ? undefined : sessionModal} batchId={batch.id} onClose={() => setSessionModal(null)} />
       )}

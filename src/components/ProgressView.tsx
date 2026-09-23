@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listProgress, outlineFor, summarise, type ProgressRow } from "@/lib/progress";
+import { listProgress, outlineFor, summarise, type CourseOutline, type ProgressRow } from "@/lib/progress";
+import { useAdminData } from "@/lib/useStore";
 import { initials } from "@/lib/format";
 import { EmptyState, Modal, Pill, card, th } from "./ui";
 
@@ -21,6 +22,9 @@ const when = (iso: string) =>
  * actually gets asked — which is where someone stopped.
  */
 export default function ProgressView() {
+  // The outlines come from the catalogue the admin already holds, so a count
+  // here is the same one the batch roster shows.
+  const courses = useAdminData().courses;
   const [rows, setRows] = useState<ProgressRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -77,7 +81,8 @@ export default function ProgressView() {
         </div>
 
         {rows.map((r) => {
-          const s = summarise(r);
+          const outline = outlineFor(courses, r.course_slug);
+          const s = summarise(r, outline);
           return (
             <button
               key={r.id}
@@ -104,7 +109,7 @@ export default function ProgressView() {
               </div>
 
               <div style={{ font: "600 13px 'Plus Jakarta Sans',sans-serif", color: "#3d5064" }}>
-                {outlineFor(r.course_slug)?.title ?? r.course_slug}
+                {outline?.title ?? r.course_slug}
               </div>
 
               <div>
@@ -126,15 +131,14 @@ export default function ProgressView() {
         })}
       </div>
 
-      {open && <JourneyModal row={open} onClose={() => setOpen(null)} />}
+      {open && <JourneyModal row={open} outline={outlineFor(courses, open.course_slug)} onClose={() => setOpen(null)} />}
     </>
   );
 }
 
 /** The item-by-item trail: what was finished, in what order, and where it stopped. */
-function JourneyModal({ row, onClose }: { row: ProgressRow; onClose: () => void }) {
-  const outline = outlineFor(row.course_slug);
-  const s = summarise(row);
+function JourneyModal({ row, outline, onClose }: { row: ProgressRow; outline: CourseOutline | null; onClose: () => void }) {
+  const s = summarise(row, outline);
   const done = new Set(row.completed_items ?? []);
   const order = new Map((row.completed_items ?? []).map((id, i) => [id, i + 1]));
 
@@ -153,14 +157,13 @@ function JourneyModal({ row, onClose }: { row: ProgressRow; onClose: () => void 
 
       {!outline ? (
         <div style={{ font: "400 13.5px/1.7 'Plus Jakarta Sans',sans-serif", color: "#5b6e82" }}>
-          This course has no outline in the admin yet, so only the totals can be shown. The learner has finished{" "}
-          {row.completed_items.length} item{row.completed_items.length === 1 ? "" : "s"}.
+          This course&apos;s modules carry no lesson list yet, so there is nothing to measure against. The learner has
+          finished {row.completed_items.length} item{row.completed_items.length === 1 ? "" : "s"}.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {outline.items.map((it, i) => {
             const isDone = done.has(it.id);
-            const attempt = row.quiz_attempts?.[it.id];
             // The first unfinished item is where they are now.
             const isCurrent = !isDone && outline.items.slice(0, i).every((p) => done.has(p.id));
             return (
@@ -174,11 +177,16 @@ function JourneyModal({ row, onClose }: { row: ProgressRow; onClose: () => void 
                 <span aria-hidden style={{ flex: "none", width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", font: "700 10px 'Plus Jakarta Sans',sans-serif", background: isDone ? "#1b8f88" : "#e3eaf0", color: isDone ? "#fff" : "#8296a9" }}>
                   {isDone ? order.get(it.id) ?? "✓" : i + 1}
                 </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
+                {/* The label is tidied from the item's id, since the titles
+                    themselves live in the website's code. The id rides along as
+                    a tooltip so there is never doubt about which item it is. */}
+                <span style={{ flex: 1, minWidth: 0 }} title={it.id}>
                   <span style={{ display: "block", font: "600 13px 'Plus Jakarta Sans',sans-serif", color: isDone ? "#0a1b33" : "#8296a9" }}>{it.title}</span>
-                  <span style={{ display: "block", font: "500 11px 'Plus Jakarta Sans',sans-serif", color: "#a9b8c6" }}>{it.module} · {it.kind}</span>
+                  <span style={{ display: "block", font: "500 11px 'Plus Jakarta Sans',sans-serif", color: "#a9b8c6" }}>{it.module}</span>
                 </span>
-                {attempt && <Pill tone={attempt.score === attempt.total ? "good" : "warn"}>{attempt.score}/{attempt.total}</Pill>}
+                {/* No score against a quiz on purpose: a quiz is either passed,
+                    which completes the item, or not, which leaves it open. The
+                    marks themselves are not kept. */}
                 {isCurrent && <Pill tone="neutral">Here now</Pill>}
               </div>
             );
