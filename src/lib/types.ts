@@ -134,6 +134,16 @@ export type CertificateSettings = {
 /** What changes per certificate. Never stored — typed, previewed, printed. */
 export type CertificateIssue = {
   template: CertificateTemplate;
+  /**
+   * The heading, e.g. "Certificate of Completion".
+   *
+   * Editable because the wording is not the same for every programme: a
+   * twelve-week certification completes training, a two-hour masterclass does
+   * not. On the Award of Excellence the heading is part of the artwork, so
+   * changing it switches to the plate that carries no heading and draws this
+   * instead.
+   */
+  title: string;
   recipientName: string;
   courseName: string;
   completedOn: string;

@@ -176,6 +176,19 @@ export const LOCAL_PLATES = {
   cpd: withBase("/certificates/cpd.jpg"),
 } as const;
 
+/**
+ * The Award of Excellence artwork with its printed heading lifted out.
+ *
+ * The heading is part of the design, so a different wording cannot simply be
+ * written over it — a patch would cut through the teal swirl that passes behind
+ * the words. This is the same plate with the lettering removed and the artwork
+ * behind it kept, used whenever the title is not the one the artwork carries.
+ */
+export const EXCELLENCE_BLANK_PLATE = withBase("/certificates/excellence-blank.jpg");
+
+/** What the Award of Excellence artwork prints when nothing else is asked for. */
+export const DEFAULT_CERTIFICATE_TITLE = "Certificate of Training Completion";
+
 /** Resolves once per URL — a missing file is a 404, not an exception. */
 const probes = new Map<string, Promise<boolean>>();
 

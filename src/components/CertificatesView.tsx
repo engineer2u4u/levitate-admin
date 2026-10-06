@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   CANVASES,
+  DEFAULT_CERTIFICATE_TITLE,
+  EXCELLENCE_BLANK_PLATE,
   LOCAL_PLATES,
   downloadBlob,
   fileStem,
@@ -31,6 +33,7 @@ export default function CertificatesView() {
 
   const [issue, setIssue] = useState<CertificateIssue>({
     template: "excellence",
+    title: DEFAULT_CERTIFICATE_TITLE,
     recipientName: "",
     courseName: "",
     completedOn: today(),
@@ -61,19 +64,28 @@ export default function CertificatesView() {
     cpd: data.certificate.cpdPlateUrl,
   }[issue.template];
   const portrait = canvas.h > canvas.w;
+  // A title the artwork does not print needs the plate that carries no
+  // heading, because the printed one cannot be covered without cutting through
+  // the swirl behind it.
+  const customTitle =
+    issue.template === "excellence" && issue.title.trim() !== DEFAULT_CERTIFICATE_TITLE && issue.title.trim() !== "";
+
   const [localPlate, setLocalPlate] = useState("");
   useEffect(() => {
     let alive = true;
-    const candidate = LOCAL_PLATES[issue.template];
+    const candidate = customTitle ? EXCELLENCE_BLANK_PLATE : LOCAL_PLATES[issue.template];
     void plateExists(candidate).then((found) => {
       if (alive) setLocalPlate(found ? candidate : "");
     });
     return () => {
       alive = false;
     };
-  }, [issue.template]);
+  }, [issue.template, customTitle]);
 
   const plate = uploaded || localPlate;
+  // An uploaded plate is someone's own artwork and prints whatever it prints;
+  // only the shipped blank one is known to leave the heading to us.
+  const plateHasTitle = plate !== EXCELLENCE_BLANK_PLATE;
   const hasPlate = Boolean(plate);
 
   // Read the plate's own colours behind each patch, so covering the specimen
@@ -99,9 +111,11 @@ export default function CertificatesView() {
       return null;
     }
     try {
-      // The CPD plate is already print-size; 2.5× of it would be a 29-megapixel
+      // 3× of a 1600×900 canvas is 4800×2700 — about 300dpi across an A4
+      // landscape, so a download prints as well as it reads on screen. The CPD
+      // plate is already print-size, and 3× of it would be a 42-megapixel
       // canvas, past what some browsers will allocate.
-      return await svgToPng(svgRef.current, canvas, issue.template === "cpd" ? 1.25 : 2.5);
+      return await svgToPng(svgRef.current, canvas, issue.template === "cpd" ? 1.5 : 3);
     } catch (err) {
       toast(err instanceof Error ? err.message : "The certificate could not be rendered");
       return null;
@@ -156,6 +170,20 @@ export default function CertificatesView() {
             </div>
           </div>
 
+          {issue.template === "excellence" && (
+            <Field
+              label="Title"
+              hint="What the certificate is headed. The artwork prints this one; any other wording is set over the plate instead."
+            >
+              <input
+                value={issue.title}
+                onChange={(e) => set("title", e.target.value)}
+                placeholder={DEFAULT_CERTIFICATE_TITLE}
+                style={input}
+              />
+            </Field>
+          )}
+
           <Field label="Recipient name">
             <input value={issue.recipientName} onChange={(e) => set("recipientName", e.target.value)} placeholder="Ananya Rao" style={input} />
           </Field>
@@ -207,8 +235,8 @@ export default function CertificatesView() {
               Download PDF
             </button>
             <div style={{ font: "500 10px/1.5 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginTop: -3 }}>
-              Opens your browser&rsquo;s print dialog — choose <strong style={{ color: "var(--body)" }}>Save as PDF</strong>. Prints as
-              vectors, so the text stays sharp at any size.
+              Opens your browser&rsquo;s print dialog — choose <strong style={{ color: "var(--body)" }}>Save as PDF</strong>, and turn
+              off any &ldquo;fit to page&rdquo; scaling. The text prints as vectors, so it stays sharp at any size.
             </div>
             <button type="button" className="btn btn-soft" onClick={() => void downloadPng()} disabled={Boolean(busy)}>
               {working("png") ? "Rendering…" : "Download PNG"}
@@ -229,9 +257,11 @@ export default function CertificatesView() {
           {/* On screen a portrait certificate is held to a readable width —
               full width it would stand taller than the window. Print is
               unaffected: its size comes from the page rule. */}
-          <style>{`@media print { @page { size: ${canvas.pageMm.w}mm ${canvas.pageMm.h}mm; margin: 0; } .cert-print, .cert-print svg { width: ${canvas.pageMm.w}mm; height: ${canvas.pageMm.h}mm; } } @media screen { .cert-portrait { width: 100%; max-width: 560px; margin: 0 auto; } }`}</style>
+          {/* print-color-adjust keeps the artwork's colour: without it a browser
+              is free to drop backgrounds and print the plate washed out. */}
+          <style>{`@media print { @page { size: ${canvas.pageMm.w}mm ${canvas.pageMm.h}mm; margin: 0; } .cert-print, .cert-print svg { width: ${canvas.pageMm.w}mm; height: ${canvas.pageMm.h}mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; image-rendering: high-quality; } } @media screen { .cert-portrait { width: 100%; max-width: 560px; margin: 0 auto; } }`}</style>
           <div className={portrait ? "cert-print cert-portrait" : "cert-print"} style={{ background: "#fff", boxShadow: "0 10px 30px rgba(10,31,56,.13)" }}>
-            <CertificateArt ref={svgRef} issue={issue} settings={data.certificate} plate={plate} maskColors={maskColors} />
+            <CertificateArt ref={svgRef} issue={issue} settings={data.certificate} plate={plate} maskColors={maskColors} plateHasTitle={plateHasTitle} />
           </div>
         </div>
       </div>

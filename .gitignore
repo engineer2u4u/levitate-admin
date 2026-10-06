@@ -13,3 +13,8 @@ supabase/seed_admin.sql
 
 # Supabase CLI cache
 supabase/.temp
+
+# Generated certificates and their register. The artwork is large, and the
+# register carries attendees. names and email addresses, which do not belong
+# in a repository that is pushed to a hosting service.
+/certificates-*/

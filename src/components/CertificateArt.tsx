@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
-import { CANVASES, MASKS, fitBlock, parseRich, richWords, runsOf, wrap, wrapRich, type MaskColors, type MaskRegion } from "@/lib/certificate";
+import { CANVASES, DEFAULT_CERTIFICATE_TITLE, MASKS, fitBlock, parseRich, richWords, runsOf, wrap, wrapRich, type MaskColors, type MaskRegion } from "@/lib/certificate";
 import type { CertificateIssue, CertificateSettings } from "@/lib/types";
 
 const SERIF = "Georgia, 'Times New Roman', serif";
@@ -27,10 +27,12 @@ type Props = {
   plate: string;
   /** Background colour read from the plate behind each patch. */
   maskColors: MaskColors;
+  /** True when the artwork prints its own heading, so none is drawn over it. */
+  plateHasTitle?: boolean;
 };
 
 const CertificateArt = forwardRef<SVGSVGElement, Props>(
-  function CertificateArt({ issue, settings, plate, maskColors }, ref) {
+  function CertificateArt({ issue, settings, plate, maskColors, plateHasTitle = true }, ref) {
     const canvas = CANVASES[issue.template];
     return (
       <svg
@@ -48,7 +50,7 @@ const CertificateArt = forwardRef<SVGSVGElement, Props>(
         ) : issue.template === "cpd" ? (
           <Cpd issue={issue} settings={settings} plate={plate} />
         ) : (
-          <Excellence issue={issue} settings={settings} plate={plate} maskColors={maskColors} />
+          <Excellence issue={issue} settings={settings} plate={plate} maskColors={maskColors} plateHasTitle={plateHasTitle} />
         )}
       </svg>
     );
@@ -199,11 +201,15 @@ const E_MID = E_PANEL + (E.w - E_PANEL) / 2;
 const E_INK = "#0d2748";
 const E_TEAL = "#2f8f86";
 
-function Excellence({ issue, settings, plate, maskColors }: Omit<Props, "issue"> & { issue: CertificateIssue }) {
+function Excellence({ issue, settings, plate, maskColors, plateHasTitle }: Omit<Props, "issue"> & { issue: CertificateIssue }) {
   const mask = Boolean(plate) && settings.plateHasSampleText;
   const patch = (id: string) => maskColors[id] ?? "#ffffff";
   const M = Object.fromEntries(MASKS.excellence.map((r) => [r.id, r]));
   const twoUp = Boolean(settings.secondName.trim());
+  const title = issue.title.trim() || DEFAULT_CERTIFICATE_TITLE;
+  // Drawn only when the artwork is not already carrying a heading of its own,
+  // which is how a changed title gets onto a plated certificate at all.
+  const drawTitle = !plate || !plateHasTitle;
 
   // One flowed sentence — lead-in, title in bold, closing line — because the
   // artwork sets the title on the same line as its lead-in. Laying them out as
@@ -237,7 +243,16 @@ function Excellence({ issue, settings, plate, maskColors }: Omit<Props, "issue">
       <rect width={E.w} height={E.h} fill="#fff" />
 
       {plate ? (
-        <image href={plate} x="0" y="0" width={E.w} height={E.h} preserveAspectRatio="none" />
+        <>
+          <image href={plate} x="0" y="0" width={E.w} height={E.h} preserveAspectRatio="none" />
+          {/* Set to the artwork's own heading: same size, same baseline, so a
+              changed wording sits where the printed one did. */}
+          {drawTitle && (
+            <text x={E_MID} y="180" textAnchor="middle" fontFamily={SERIF} fontSize="76" fontWeight="700" fill="#16304a">
+              {title}
+            </text>
+          )}
+        </>
       ) : (
         <>
           <path d={`M ${E.w - 340} 0 A 340 340 0 0 1 ${E.w} 340 L ${E.w} 0 Z`} fill="url(#e-arc)" />
@@ -280,7 +295,7 @@ function Excellence({ issue, settings, plate, maskColors }: Omit<Props, "issue">
           )}
 
           <text x={E_MID} y="190" textAnchor="middle" fontFamily={SERIF} fontSize="47" fontWeight="700" fill={E_INK}>
-            Certificate of Training Completion
+            {title}
           </text>
           <text x={E_MID} y="238" textAnchor="middle" fontFamily={SANS} fontSize="15" fontWeight="700" fill={E_TEAL} letterSpacing="3.6">
             THIS CERTIFICATE IS PROUDLY PRESENTED TO
