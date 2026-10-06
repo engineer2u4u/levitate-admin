@@ -221,10 +221,16 @@ function Excellence({ issue, settings, plate, maskColors, plateHasTitle }: Omit<
       // `**…**` in the closing line marks what the artwork sets in bold.
       ...parseRich(settings.closingNote),
     ],
-    58,
+    76,
   );
   // The band between the rule under the name and the completed chip.
-  const body = fitBlock(bodyLines.length, 434, [37, 37, 37, 31, 26], [21, 21, 21, 18, 16]);
+  //
+  // A long measure and tight leading on purpose: at 58 characters a programme
+  // name of any length ran to four airy lines that drifted towards the chip
+  // below it. Seventy-six holds the same copy in three, and the lines sit
+  // closer together, which is how the citation reads as one sentence rather
+  // than as a stack.
+  const body = fitBlock(bodyLines.length, 434, [31, 31, 31, 31, 26], [21, 21, 21, 21, 18]);
 
   return (
     <>
