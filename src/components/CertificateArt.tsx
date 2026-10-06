@@ -199,6 +199,8 @@ const E = CANVASES.excellence;
 const E_PANEL = 398;
 const E_MID = E_PANEL + (E.w - E_PANEL) / 2;
 const E_INK = "#0d2748";
+// The artwork centres its heading a shade right of the panel.s middle.
+const E_TITLE_MID = 1020;
 const E_TEAL = "#2f8f86";
 
 function Excellence({ issue, settings, plate, maskColors, plateHasTitle }: Omit<Props, "issue"> & { issue: CertificateIssue }) {
@@ -251,12 +253,16 @@ function Excellence({ issue, settings, plate, maskColors, plateHasTitle }: Omit<
       {plate ? (
         <>
           <image href={plate} x="0" y="0" width={E.w} height={E.h} preserveAspectRatio="none" />
-          {/* Set to the artwork's own heading: same size, same baseline, so a
-              changed wording sits where the printed one did. */}
+          {/* Measured off the artwork rather than guessed: its capitals stand
+              39 high with the baseline at 186 and the words centred on 1020,
+              which is Georgia at 56 set a little narrower than it draws. A
+              changed wording then sits exactly where the printed one did. */}
           {drawTitle && (
-            <text x={E_MID} y="180" textAnchor="middle" fontFamily={SERIF} fontSize="76" fontWeight="700" fill="#16304a">
-              {title}
-            </text>
+            <g transform={`translate(${E_TITLE_MID} 0) scale(0.914 1)`}>
+              <text x="0" y="186" textAnchor="middle" fontFamily={SERIF} fontSize="56" fontWeight="700" fill={E_INK}>
+                {title}
+              </text>
+            </g>
           )}
         </>
       ) : (
