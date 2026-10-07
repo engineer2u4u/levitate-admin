@@ -372,6 +372,9 @@ function friendly({ message, code }: DbError): string {
   if (/_https|join_url|recording_url|payment_link/.test(message)) return "Links have to be full addresses starting with https://";
   if (/has no module/.test(message)) return message;
   if (/batches_ends_after_starts|sessions_ends_after_starts/.test(message)) return "The end has to be after the start.";
+  if (code === "23503" && /certificates/.test(message)) {
+    return "A certificate was issued against this seat. Run migration 0022, then try again — it will be cancelled rather than deleted.";
+  }
   if (code === "23503") return IN_USE;
   if (code === "23505") return "That already exists. Reload the page and check.";
   if (/admin_assign_learner|admin_unassign_learner|admin_reset_progress/.test(message)) {
@@ -850,14 +853,19 @@ export async function assignLearner(userId: string, batchId: string): Promise<{ 
  * deleted — the seat frees either way, but the record of a real sale is not
  * ours to erase. The database decides which happened and says so.
  */
-export async function unassignLearner(enrolmentId: string): Promise<{ ok: true; outcome: "deleted" | "cancelled" } | Failure> {
-  const res = await run<"deleted" | "cancelled">((db) =>
-    db.rpc("admin_unassign_learner", { p_enrolment_id: enrolmentId }),
-  );
+export async function unassignLearner(
+  enrolmentId: string,
+): Promise<{ ok: true; outcome: "deleted" | "payment"; certNo?: undefined } | { ok: true; outcome: "certificate"; certNo: string } | Failure> {
+  const res = await run<string>((db) => db.rpc("admin_unassign_learner", { p_enrolment_id: enrolmentId }));
   if (!res.ok) return res;
 
+  // "deleted", "payment", or "certificate:2026-09-001" — the database says
+  // which, because only it knows what was pointing at the seat.
+  const [kind, certNo] = String(res.data).split(":");
+  const deleted = kind === "deleted";
+
   setCatalog(
-    res.data === "deleted"
+    deleted
       ? { enrolments: catalog.enrolments.filter((e) => e.id !== enrolmentId) }
       : {
           enrolments: catalog.enrolments.map((e) =>
@@ -865,7 +873,9 @@ export async function unassignLearner(enrolmentId: string): Promise<{ ok: true; 
           ),
         },
   );
-  return { ok: true, outcome: res.data };
+
+  if (kind === "certificate") return { ok: true, outcome: "certificate", certNo: certNo ?? "" };
+  return { ok: true, outcome: deleted ? "deleted" : "payment" };
 }
 
 /* ------------------------------ certificates ------------------------- */

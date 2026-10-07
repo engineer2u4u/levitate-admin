@@ -95,7 +95,9 @@ function LearnerRow({ enrolment: e, canWrite }: { enrolment: Enrolment; canWrite
                   ? res.error
                   : res.outcome === "deleted"
                     ? `${e.name} removed from the batch`
-                    : `${e.name} paid for this seat, so the record was cancelled rather than deleted`,
+                    : res.outcome === "certificate"
+                      ? `Certificate ${res.certNo} was issued against this seat, so it was cancelled rather than deleted`
+                      : `${e.name} paid for this seat, so the record was cancelled rather than deleted`,
               );
             }}
             style={textButton("#b4453f")}
@@ -327,12 +329,22 @@ export default function BatchDetailView() {
               {active.length} enrolled{people.length > active.length ? ` · ${people.length - active.length} cancelled` : ""}
             </div>
           </div>
-          {canWrite && !finished && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="btn btn-soft" onClick={() => setAssigning(true)}>Assign an account</button>
-              <button type="button" className="btn btn-dark" onClick={() => openEnrol({ batchId: batch.id })}>+ Enrol someone</button>
-            </div>
-          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {/* The roster below is this batch at a glance; Enrolments is where
+                the money is — amounts, payment links, share and CSV — so it
+                opens already filtered to this batch. */}
+            {people.length > 0 && (
+              <Link href={`/enrolments/?batch=${batch.id}`} className="btn btn-soft" style={{ display: "inline-block" }}>
+                Open in Enrolments
+              </Link>
+            )}
+            {canWrite && !finished && (
+              <>
+                <button type="button" className="btn btn-soft" onClick={() => setAssigning(true)}>Assign an account</button>
+                <button type="button" className="btn btn-dark" onClick={() => openEnrol({ batchId: batch.id })}>+ Enrol someone</button>
+              </>
+            )}
+          </div>
         </div>
         {people.length === 0 ? (
           <div style={{ padding: "22px 16px", textAlign: "center", font: "500 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>Nobody enrolled yet.</div>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { inr } from "@/lib/format";
 import {
@@ -89,9 +90,12 @@ export default function EnrolmentsView() {
   const canWrite = useCanWrite();
   // Shared with the shell, so its "awaiting payment" badge can preselect Unpaid.
   const { filter, setFilter } = usePaymentFilter();
+  const params = useSearchParams();
   const [query, setQuery] = useState("");
   const [courseId, setCourseId] = useState("all");
-  const [batchId, setBatchId] = useState("all");
+  // A batch's page sends people here with its own id, so the list opens on
+  // that batch rather than on everything with the batch left to find.
+  const [batchId, setBatchId] = useState(params.get("batch") ?? "all");
   const [busy, setBusy] = useState<string | null>(null);
   // Who signed up on the website. Read live from profiles rather than through
   // the catalogue store, because signups happen on the LMS and nothing here
@@ -212,7 +216,9 @@ export default function EnrolmentsView() {
         ? res.error
         : res.outcome === "deleted"
           ? `${e.name} removed`
-          : `${e.name} paid for that seat, so the record was cancelled rather than deleted`,
+          : res.outcome === "certificate"
+            ? `Certificate ${res.certNo} was issued against that seat, so it was cancelled rather than deleted`
+            : `${e.name} paid for that seat, so the record was cancelled rather than deleted`,
     );
   };
 
