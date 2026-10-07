@@ -3,6 +3,7 @@ import { BASE_PATH } from "./basePath";
 import type {
   Batch,
   BatchInput,
+  BatchLink,
   Certificate,
   Course,
   CourseInput,
@@ -125,12 +126,17 @@ export type SessionRow = {
 export type BatchDbRow = {
   id: string; course_id: string; name: string; code: string;
   starts_on: string | null; ends_on: string | null;
-  status: Batch["status"]; enrolment_open: boolean; seats: number;
+  status: Batch["status"]; enrolment_open: boolean; seats: number; price_paise: number;
+  hours_label: string; pdcs: string; cpd_hours: string;
   completed_at: string | null; created_at: string; updated_at: string;
 };
 
 export type SessionLinkRow = {
   session_id: string; join_url: string; meeting_id: string; passcode: string; recording_url: string;
+};
+
+export type BatchLinkRow = {
+  batch_id: string; join_url: string; meeting_id: string; passcode: string;
 };
 
 export type ModuleUnlockRow = {
@@ -353,6 +359,10 @@ export function batchFromRow(r: BatchDbRow): Batch {
     status: r.status,
     enrolmentOpen: r.enrolment_open ?? true,
     seats: r.seats,
+    pricePaise: r.price_paise ?? 0,
+    hoursLabel: r.hours_label ?? "",
+    pdcs: r.pdcs ?? "",
+    cpdHours: r.cpd_hours ?? "",
     completedAt: r.completed_at ?? null,
     createdAt: r.created_at,
   };
@@ -368,6 +378,10 @@ export function batchToRow(b: BatchInput): BatchWrite {
     status: b.status,
     enrolment_open: b.enrolmentOpen,
     seats: b.seats,
+    price_paise: b.pricePaise,
+    hours_label: b.hoursLabel,
+    pdcs: b.pdcs,
+    cpd_hours: b.cpdHours,
   };
 }
 
@@ -390,6 +404,20 @@ export function sessionLinkToRow(l: SessionLink): SessionLinkRow {
     recording_url: l.recordingUrl,
   };
 }
+
+export const batchLinkFromRow = (r: BatchLinkRow): BatchLink => ({
+  batchId: r.batch_id,
+  joinUrl: r.join_url ?? "",
+  meetingId: r.meeting_id ?? "",
+  passcode: r.passcode ?? "",
+});
+
+export const batchLinkToRow = (l: BatchLink): BatchLinkRow => ({
+  batch_id: l.batchId,
+  join_url: l.joinUrl,
+  meeting_id: l.meetingId,
+  passcode: l.passcode,
+});
 
 export function enrolmentFromRow(r: EnrolmentRow): Enrolment {
   return {

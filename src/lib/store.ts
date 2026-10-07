@@ -3,6 +3,7 @@ import type {
   AdminData,
   Batch,
   BatchInput,
+  BatchLink,
   CertificateSettings,
   Course,
   CourseInput,
@@ -11,6 +12,7 @@ import type {
   EnrolmentInput,
   EnrolmentStatus,
   Facilitator,
+  AssessmentResult,
   LearnerProgress,
   LegacyEnrolment,
   LocalData,
@@ -22,6 +24,8 @@ import type {
 import { DEFAULT_CERTIFICATE } from "./certificate";
 import {
   batchFromRow,
+  batchLinkFromRow,
+  batchLinkToRow,
   batchToRow,
   courseFromRow,
   coursePatchToRow,
@@ -34,6 +38,7 @@ import {
   sessionLinkToRow,
   sessionToRow,
   type BatchDbRow,
+  type BatchLinkRow,
   type CertificateRow,
   type CourseRow,
   type EnrolmentRow,
@@ -75,6 +80,8 @@ export const EMPTY: AdminData = {
   moduleUnlocks: [],
   progress: [],
   certificates: [],
+  batchLinks: [],
+  assessments: [],
 };
 
 /** What a browser starts with: the certificate defaults and nothing else. */
@@ -85,9 +92,9 @@ export type CatalogStatus = { state: "idle" | "loading" | "ready" | "error"; err
 
 export const CATALOG_IDLE: CatalogStatus = { state: "idle", error: "" };
 
-type Catalog = Pick<AdminData, "courses" | "batches" | "sessions" | "sessionLinks" | "enrolments" | "moduleUnlocks" | "progress" | "certificates">;
+type Catalog = Pick<AdminData, "courses" | "batches" | "sessions" | "sessionLinks" | "enrolments" | "moduleUnlocks" | "progress" | "certificates" | "batchLinks" | "assessments">;
 
-const NO_CATALOG: Catalog = { courses: [], batches: [], sessions: [], sessionLinks: [], enrolments: [], moduleUnlocks: [], progress: [], certificates: [] };
+const NO_CATALOG: Catalog = { courses: [], batches: [], sessions: [], sessionLinks: [], enrolments: [], moduleUnlocks: [], progress: [], certificates: [], batchLinks: [], assessments: [] };
 
 let local: LocalData | null = null;
 let catalog: Catalog = NO_CATALOG;
@@ -271,6 +278,8 @@ function setCatalog(next: Partial<Catalog>) {
     moduleUnlocks: merged.moduleUnlocks,
     progress: merged.progress,
     certificates: merged.certificates,
+    batchLinks: merged.batchLinks,
+    assessments: merged.assessments,
   };
   emit();
 }
@@ -302,10 +311,12 @@ export async function loadCatalog(): Promise<void> {
 
     // Unlocks and progress enrich the batch screen but are not needed to run
     // the rest, so a database that has not had 0017 yet still loads.
-    const [unlocks, progress, certificates] = await Promise.all([
+    const [unlocks, progress, certificates, batchLinks, assessments] = await Promise.all([
       db.from("batch_module_unlocks").select("*"),
       db.from("course_progress_admin").select("user_id, course_slug, completed_items, completed_at, updated_at"),
       db.from("certificates").select("*").order("issued_at", { ascending: false }),
+      db.from("batch_links").select("*"),
+      db.from("assessment_results_admin").select("*"),
     ]);
     if (mine !== generation) return;
     setCatalog({
@@ -333,6 +344,23 @@ export async function loadCatalog(): Promise<void> {
       // Like unlocks and progress: a database without 0020 still loads, it
       // just has no register to show yet.
       certificates: certificates.error ? [] : ((certificates.data ?? []) as CertificateRow[]).map(certificateFromRow),
+      batchLinks: batchLinks.error ? [] : ((batchLinks.data ?? []) as BatchLinkRow[]).map(batchLinkFromRow),
+      // The assessment's score, kept where stage quiz marks are not. A
+      // database without 0027 simply has none to show.
+      assessments: assessments.error ? [] : ((assessments.data ?? []) as {
+        user_id: string; course_slug: string; item_id: string; attempts: number;
+        best_score: number; latest_score: number; total: number; ever_passed: boolean; last_attempt_at: string;
+      }[]).map((r) => ({
+        userId: r.user_id,
+        courseSlug: r.course_slug,
+        itemId: r.item_id,
+        attempts: r.attempts,
+        bestScore: r.best_score,
+        latestScore: r.latest_score,
+        total: r.total,
+        everPassed: r.ever_passed,
+        lastAttemptAt: r.last_attempt_at,
+      })),
     });
     setStatus({ state: "ready", error: "" });
   } catch (e) {
@@ -878,6 +906,66 @@ export async function unassignLearner(
   return { ok: true, outcome: deleted ? "deleted" : "payment" };
 }
 
+/* ----------------------------- payment links ------------------------- */
+
+/**
+ * Where the payment server lives.
+ *
+ * Empty means same origin, which is what the deployed portal uses — it is
+ * served from /admin-panel on the website's own domain, so /api/… is the
+ * website's PHP. A development build points at the deployed origin, because
+ * `next dev` cannot serve PHP.
+ */
+const PAYMENT_API = (process.env.NEXT_PUBLIC_PAYMENT_API_BASE ?? "").replace(/\/$/, "");
+
+/**
+ * Asks Razorpay for a payment link for one seat.
+ *
+ * The amount is not sent from here unless the office is giving a discount, and
+ * even then the server checks it against the batch's own price: the browser
+ * can ask for less than the listed fee, never for more, and never for free.
+ * The enrolment's id rides along on the link, so the webhook that hears about
+ * the payment knows which seat it belongs to.
+ */
+export async function createPaymentLink(
+  enrolment: Pick<Enrolment, "id" | "name" | "email" | "phone" | "batchId">,
+  amountPaise?: number,
+): Promise<{ ok: true; url: string } | Failure> {
+  try {
+    const supabase = await getClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return { ok: false, error: "Sign in again — this session has expired." };
+
+    const res = await fetch(`${PAYMENT_API}/api/razorpay-payment-link.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accessToken: token,
+        batchId: enrolment.batchId,
+        enrolmentId: enrolment.id,
+        name: enrolment.name,
+        email: enrolment.email,
+        phone: enrolment.phone,
+        ...(amountPaise ? { amountPaise } : {}),
+      }),
+    });
+
+    const body = (await res.json().catch(() => null)) as { ok?: boolean; url?: string; error?: string } | null;
+    if (!body) return { ok: false, error: "The payment server did not answer properly." };
+    if (body.ok !== true || !body.url) return { ok: false, error: body.error ?? "The link could not be made." };
+
+    // Kept on the enrolment, so it is there to send again without asking
+    // Razorpay for a second link to the same seat.
+    const saved = await updateEnrolment(enrolment.id, { paymentLink: body.url });
+    if (!saved.ok) return saved;
+
+    return { ok: true, url: body.url };
+  } catch (e) {
+    return { ok: false, error: friendly({ message: e instanceof Error ? e.message : String(e) }) };
+  }
+}
+
 /* ------------------------------ certificates ------------------------- */
 
 /** The certificate issued against a seat, if there is one. */
@@ -1014,6 +1102,75 @@ export const batchSeatsLeft = (d: AdminData, batch: Batch) => Math.max(0, batch.
 export const sessionsOf = (d: AdminData, batchId: string) => d.sessions.filter((s) => s.batchId === batchId);
 
 export const linkFor = (d: AdminData, sessionId: string) => d.sessionLinks.find((l) => l.sessionId === sessionId) ?? null;
+
+/**
+ * How a learner did at a course's assessment, if they have sat it.
+ *
+ * Looked up by the account rather than the enrolment: someone who repeats a
+ * course keeps the record of both sittings, and the question "what did they
+ * score" is about the person, not the seat.
+ */
+export function assessmentFor(d: AdminData, enrolment: Enrolment): AssessmentResult | null {
+  if (!enrolment.userId) return null;
+  const slug = d.courses.find((c) => c.id === enrolment.courseId)?.slug;
+  if (!slug) return null;
+  return d.assessments.find((a) => a.userId === enrolment.userId && a.courseSlug === slug) ?? null;
+}
+
+/** The Zoom room set for a whole batch, if one is. */
+export const batchLinkFor = (d: AdminData, batchId: string) => d.batchLinks.find((l) => l.batchId === batchId) ?? null;
+
+/**
+ * The room a session actually meets in: its own if it has one, otherwise the
+ * batch's. `inherited` says which, because "no link on this session" and "no
+ * link anywhere" look the same on screen and mean very different things.
+ */
+export function zoomFor(d: AdminData, session: Session): { joinUrl: string; meetingId: string; passcode: string; recordingUrl: string; inherited: boolean } {
+  const own = linkFor(d, session.id);
+  const batch = batchLinkFor(d, session.batchId);
+  const hasOwn = Boolean(own?.joinUrl || own?.meetingId || own?.passcode);
+  return {
+    joinUrl: (hasOwn ? own?.joinUrl : batch?.joinUrl) ?? "",
+    meetingId: (hasOwn ? own?.meetingId : batch?.meetingId) ?? "",
+    passcode: (hasOwn ? own?.passcode : batch?.passcode) ?? "",
+    // A recording belongs to the sitting it was made at, never to the batch.
+    recordingUrl: own?.recordingUrl ?? "",
+    inherited: !hasOwn && Boolean(batch?.joinUrl || batch?.meetingId || batch?.passcode),
+  };
+}
+
+/**
+ * Sets, or clears, the Zoom room a whole batch meets in.
+ *
+ * Clearing it does not touch any session that has its own: those are the
+ * exceptions, and an exception should not disappear because the rule did.
+ */
+export async function saveBatchLink(link: BatchLink): Promise<SaveResult> {
+  const clean: BatchLink = {
+    batchId: link.batchId,
+    joinUrl: link.joinUrl.trim(),
+    meetingId: link.meetingId.trim(),
+    passcode: link.passcode.trim(),
+  };
+  const empty = !clean.joinUrl && !clean.meetingId && !clean.passcode;
+  const before = catalog.batchLinks;
+  setCatalog({ batchLinks: [...before.filter((l) => l.batchId !== clean.batchId), ...(empty ? [] : [clean])] });
+
+  const had = before.some((l) => l.batchId === clean.batchId);
+  if (empty && !had) return { ok: true };
+
+  const res = empty
+    ? await run<{ batch_id: string }[]>((db) =>
+        db.from("batch_links").delete().eq("batch_id", clean.batchId).select("batch_id"), NOT_DELETED)
+    : await run<BatchLinkRow>((db) =>
+        db.from("batch_links").upsert(batchLinkToRow(clean), { onConflict: "batch_id" }).select().single());
+
+  if (!res.ok) {
+    setCatalog({ batchLinks: before });
+    return res;
+  }
+  return { ok: true };
+}
 
 /** First and last dated session, falling back to the batch's own dates. */
 export function batchWindow(d: AdminData, batch: Batch): { from: string | null; to: string | null } {

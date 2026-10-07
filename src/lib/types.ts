@@ -296,6 +296,20 @@ export type Batch = {
    *  still take a late joiner. */
   enrolmentOpen: boolean;
   seats: number;
+  /**
+   * What this run costs, in paise.
+   *
+   * On the batch rather than the course because a course's fee changes between
+   * runs — an early-bird October and a full-price November are the same
+   * course — and because the batch is the thing someone actually buys.
+   */
+  pricePaise: number;
+  /** Teaching hours as the certificate prints them, e.g. "12 Hours". */
+  hoursLabel: string;
+  /** SHRM PDCs this run carries. Blank where it carries none. */
+  pdcs: string;
+  /** CPD points or hours this run carries. Blank where it carries none. */
+  cpdHours: string;
   completedAt: string | null;
   createdAt: string;
 };
@@ -344,6 +358,23 @@ export type SessionLink = {
   meetingId: string;
   passcode: string;
   recordingUrl: string;
+};
+
+/**
+ * The Zoom room a whole batch meets in.
+ *
+ * A cohort usually runs every session in the same room, so it is set once here
+ * and every session uses it. A session that needs its own — a guest speaker, a
+ * rescheduled sitting — keeps a `SessionLink`, and that always wins.
+ *
+ * No recording url: a recording belongs to the sitting it was made at, never
+ * to the batch.
+ */
+export type BatchLink = {
+  batchId: string;
+  joinUrl: string;
+  meetingId: string;
+  passcode: string;
 };
 
 export type EnrolmentStatus = "pending" | "paid" | "cancelled";
@@ -449,6 +480,26 @@ export type LearnerProgress = {
   updatedAt: string;
 };
 
+/**
+ * How someone did at a course's assessment, best and latest.
+ *
+ * Kept where stage quiz marks are not: the final assessment is the formal one,
+ * it is what a certificate stands on, and "what did they actually score" is a
+ * question asked months later by people who were not in the room.
+ */
+export type AssessmentResult = {
+  userId: string;
+  courseSlug: string;
+  itemId: string;
+  attempts: number;
+  bestScore: number;
+  latestScore: number;
+  total: number;
+  everPassed: boolean;
+  lastAttemptAt: string;
+};
+
+/** Everything the admin screens read, the database half and the local half. */
 export type AdminData = {
   certificate: CertificateSettings;
   facilitators: Facilitator[];
@@ -460,6 +511,8 @@ export type AdminData = {
   moduleUnlocks: ModuleUnlock[];
   progress: LearnerProgress[];
   certificates: Certificate[];
+  batchLinks: BatchLink[];
+  assessments: AssessmentResult[];
 };
 
 /** The part of `AdminData` held in this browser. Everything else is the

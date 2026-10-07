@@ -7,7 +7,7 @@ import { getClient, supabaseConfigured } from "./supabase";
  * writer, so a browser-local copy here would be a copy of nothing. RLS lets an
  * admin's token read every row and nobody else's read any.
  */
-export type EnquiryForm = "popup" | "contact" | "service" | "kit" | "masterclass" | "other";
+export type EnquiryForm = "popup" | "contact" | "service" | "kit" | "masterclass" | "feedback" | "other";
 
 export type Enquiry = {
   id: string;
@@ -47,6 +47,8 @@ export const FORM_LABEL: Record<EnquiryForm, string> = {
   service: "Service page",
   kit: "Kit download",
   masterclass: "Masterclass (paid)",
+  // Not a lead: what a delegate said about a course they had finished.
+  feedback: "Delegate feedback",
   other: "Other",
 };
 

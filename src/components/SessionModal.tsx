@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createSession, linkFor, sessionDateLabel, updateSession } from "@/lib/store";
+import { batchLinkFor, createSession, linkFor, sessionDateLabel, updateSession } from "@/lib/store";
 import { useAdminData } from "@/lib/useStore";
 import type { Session, SessionStatus } from "@/lib/types";
 import { Field, Modal, ModalActions, input } from "./ui";
@@ -52,6 +52,9 @@ export default function SessionModal({ session, courseId, batchId, onClose }: Pr
   const existingLink = session ? linkFor(data, session.id) : null;
 
   const [batch, setBatch] = useState(initialBatch);
+  // The room the batch meets in, if one is set: this session inherits it
+  // unless it is given one of its own.
+  const batchRoom = batchLinkFor(data, batch);
   const [startsOn, setStartsOn] = useState(session?.startsOn ?? "");
   const [time, setTime] = useState(session?.time ?? "");
   const [topic, setTopic] = useState(session?.topic ?? "");
@@ -187,9 +190,19 @@ export default function SessionModal({ session, courseId, batchId, onClose }: Pr
             <div style={{ borderTop: "1px solid var(--line-soft)", paddingTop: 13, display: "flex", flexDirection: "column", gap: 13 }}>
               <div style={{ font: "500 11px/1.6 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>
                 <strong style={{ color: "var(--ink)" }}>Zoom.</strong> Kept private — never shown on the public website.
+                {batchRoom ? " Leave these blank and this session uses the batch's room." : ""}
               </div>
-              <Field label="Join link" error={errors.joinUrl}>
-                <input value={joinUrl} onChange={(e) => setJoinUrl(e.target.value)} placeholder="https://us06web.zoom.us/j/…" style={input} />
+              <Field
+                label="Join link"
+                error={errors.joinUrl}
+                hint={batchRoom ? "Only fill this in if this session meets somewhere else." : undefined}
+              >
+                <input
+                  value={joinUrl}
+                  onChange={(e) => setJoinUrl(e.target.value)}
+                  placeholder={batchRoom ? batchRoom.joinUrl : "https://us06web.zoom.us/j/…"}
+                  style={input}
+                />
               </Field>
               <div className="form-2col" style={twoCol}>
                 <Field label="Meeting ID" hint="Optional.">

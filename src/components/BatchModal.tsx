@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { batchTaken, createBatch, sessionsOf, updateBatch } from "@/lib/store";
+import { paiseToRupees, rupeesToPaise } from "@/lib/format";
 import { useAdminData } from "@/lib/useStore";
 import type { Batch } from "@/lib/types";
 import { Field, Modal, ModalActions, input } from "./ui";
@@ -35,6 +36,14 @@ export default function BatchModal({ batch, courseId, onClose }: Props) {
   const [name, setName] = useState(batch?.name ?? "");
   const [nameTouched, setNameTouched] = useState(editing);
   const [seats, setSeats] = useState(String(batch?.seats ?? 30));
+  // A new batch starts from what its course charges, which is the usual case;
+  // an early-bird or a repeat run is then typed over it.
+  const [price, setPrice] = useState(paiseToRupees(batch?.pricePaise ?? 0));
+  // What this run puts on a certificate. Blank where it earns none, which is
+  // better on the plate than a dash.
+  const [hoursLabel, setHoursLabel] = useState(batch?.hoursLabel ?? "");
+  const [pdcs, setPdcs] = useState(batch?.pdcs ?? "");
+  const [cpdHours, setCpdHours] = useState(batch?.cpdHours ?? "");
   const [enrolmentOpen, setEnrolmentOpen] = useState(batch?.enrolmentOpen ?? true);
 
   // Earlier batches of this course that have dated sessions to copy.
@@ -55,6 +64,12 @@ export default function BatchModal({ batch, courseId, onClose }: Props) {
 
   const pickCourse = (id: string) => {
     setCourse(id);
+    // A new batch takes the course's fee as its starting price; an existing
+    // one keeps what it was sold at, whatever the course says today.
+    if (!editing) {
+      const fee = data.courses.find((c) => c.id === id)?.pricePaise ?? 0;
+      if (fee > 0) setPrice(paiseToRupees(fee));
+    }
     const next = data.batches.filter((b) => b.courseId === id && sessionsOf(data, b.id).some((s) => s.startsOn));
     setCopyFrom(next[next.length - 1]?.id ?? "");
   };
@@ -69,6 +84,11 @@ export default function BatchModal({ batch, courseId, onClose }: Props) {
     const seatCount = Number(seats);
     if (!Number.isInteger(seatCount) || seatCount < 1) e.seats = "A whole number, at least 1.";
     else if (seatCount < taken) e.seats = `${taken} already enrolled — seats cannot go below that.`;
+    // Required, not optional: the enrol form charges this, and a batch priced
+    // at nothing quietly offers a free seat to everyone it is sent to.
+    const pricePaise = rupeesToPaise(price);
+    if (pricePaise === null || pricePaise < 0) e.price = "What this run costs, in rupees.";
+    else if (pricePaise === 0) e.price = "A batch with no price cannot have a payment link made for it.";
     setErrors(e);
     if (Object.keys(e).length) return;
 
@@ -85,6 +105,10 @@ export default function BatchModal({ batch, courseId, onClose }: Props) {
       status: batch?.status ?? ("upcoming" as const),
       enrolmentOpen,
       seats: seatCount,
+      pricePaise: pricePaise ?? 0,
+      hoursLabel: hoursLabel.trim(),
+      pdcs: pdcs.trim(),
+      cpdHours: cpdHours.trim(),
     };
 
     setSaving(true);
@@ -131,6 +155,24 @@ export default function BatchModal({ batch, courseId, onClose }: Props) {
           </Field>
           <Field label="Seats" error={errors.seats} hint={taken ? `${taken} already enrolled` : "Total capacity"}>
             <input type="number" min={1} value={seats} onChange={(e) => setSeats(e.target.value)} style={input} />
+          </Field>
+          <Field label="Price (₹)" error={errors.price} hint="What a seat on this run costs. Payment links are made for this amount.">
+            <input type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} style={input} />
+          </Field>
+        </div>
+
+        {/* What this run puts on its certificates. Snapshotted when one is
+            issued, so changing a later batch never rewrites a certificate
+            already in someone's hands. */}
+        <div className="form-3col" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
+          <Field label="Hours" hint="As printed, e.g. 12 Hours.">
+            <input value={hoursLabel} onChange={(e) => setHoursLabel(e.target.value)} placeholder="12 Hours" style={input} />
+          </Field>
+          <Field label="SHRM PDCs" hint="Blank if none.">
+            <input value={pdcs} onChange={(e) => setPdcs(e.target.value)} placeholder="12" style={input} />
+          </Field>
+          <Field label="CPD points" hint="Blank if none.">
+            <input value={cpdHours} onChange={(e) => setCpdHours(e.target.value)} placeholder="12" style={input} />
           </Field>
         </div>
 

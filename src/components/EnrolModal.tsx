@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { inr, paiseToRupees, rupeesToPaise } from "@/lib/format";
 import { LMS_URL } from "@/lib/share";
-import { batchSeatsLeft, batchWindow, createEnrolment, enrollableBatches, setEnrolmentStatus } from "@/lib/store";
+import { batchSeatsLeft, batchWindow, createEnrolment, createPaymentLink, enrollableBatches, setEnrolmentStatus } from "@/lib/store";
 import { useAdminData, useCatalogStatus } from "@/lib/useStore";
 import type { Enrolment } from "@/lib/types";
 import EnrolmentShare from "./EnrolmentShare";
@@ -61,17 +61,23 @@ export default function EnrolModal({ prefill, onClose }: Props) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  // Pasting a link stays possible — a link made in the Razorpay dashboard, or
+  // an older one being reused — but it is no longer the way in. Left blank,
+  // creating the enrolment asks Razorpay for a link of its own.
   const [paymentLink, setPaymentLink] = useState("");
-  const [amount, setAmount] = useState(course ? paiseToRupees(course.pricePaise) : "");
+  const [amount, setAmount] = useState(batch ? paiseToRupees(batch.pricePaise) : "");
   const [amountTouched, setAmountTouched] = useState(false);
+  const [linkError, setLinkError] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Enrolment | null>(null);
 
   const pickBatch = (id: string) => {
     setBatchId(id);
-    const next = data.courses.find((c) => c.id === data.batches.find((b) => b.id === id)?.courseId);
-    // Follow the new course's fee, unless someone typed a figure of their own.
+    // Follow the new batch's price, unless someone typed a figure of their own.
+    // The price is the batch's, not the course's: an early-bird October and a
+    // full-price November are the same course at different money.
+    const next = data.batches.find((b) => b.id === id);
     if (!amountTouched) setAmount(next ? paiseToRupees(next.pricePaise) : "");
   };
 
@@ -87,6 +93,11 @@ export default function EnrolModal({ prefill, onClose }: Props) {
     if (paymentLink.trim() && !/^https:\/\/\S+$/i.test(paymentLink.trim())) e.paymentLink = "Paste the full link, starting https://";
     const amountPaise = amount.trim() ? rupeesToPaise(amount) : 0;
     if (amountPaise === null) e.amount = "Enter the amount in rupees, e.g. 32000.";
+    else if (batch && amountPaise > batch.pricePaise) {
+      e.amount = `More than this batch charges (${inr(batch.pricePaise)}). Raise the batch price if the fee has gone up.`;
+    } else if (!paymentLink.trim() && amountPaise < 100 && batch && batch.pricePaise > 0) {
+      e.amount = "A link cannot be made for nothing. Enter what they are paying.";
+    }
     setErrors(e);
     if (Object.keys(e).length || !batch || !course) return;
 
@@ -105,12 +116,24 @@ export default function EnrolModal({ prefill, onClose }: Props) {
       paymentLink: paymentLink.trim(),
       notes: "",
     });
-    setBusy(false);
     if (!res.ok) {
+      setBusy(false);
       setErrors({ save: res.error });
       return;
     }
-    setDone(res.enrolment);
+
+    // The seat exists either way; the link is the next step, not a condition
+    // of it. A Razorpay that will not answer leaves an enrolment that can be
+    // shared once a link is made by hand, rather than no enrolment at all.
+    let enrolment = res.enrolment;
+    if (!paymentLink.trim() && (amountPaise as number) >= 100) {
+      const link = await createPaymentLink(enrolment, amountPaise as number);
+      if (link.ok) enrolment = { ...enrolment, paymentLink: link.url };
+      else setLinkError(link.error);
+    }
+
+    setBusy(false);
+    setDone(enrolment);
   };
 
   /* ------------------------------ step 2 ------------------------------ */
@@ -144,11 +167,39 @@ export default function EnrolModal({ prefill, onClose }: Props) {
           </div>
 
           {!paid && current.paymentLink && (
-            <Field label="Payment link">
+            <Field label="Payment link" hint={`Razorpay will take ${inr(current.amountPaise)} through this link.`}>
               <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", font: "500 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--body)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "#f8fafc" }}>
                 {current.paymentLink}
               </div>
             </Field>
+          )}
+
+          {/* The seat was made; only the link was not. Saying why, and offering
+              to try again, beats leaving someone to wonder where it went. */}
+          {!paid && !current.paymentLink && linkError && (
+            <div style={{ background: "#fdeceb", border: "1px solid #f3c9c6", borderRadius: 11, padding: "12px 14px" }}>
+              <div style={{ font: "700 11.5px 'Plus Jakarta Sans',sans-serif", color: "#9a2c2c" }}>No payment link was made</div>
+              <div style={{ font: "500 11px/1.6 'Plus Jakarta Sans',sans-serif", color: "var(--body)", marginTop: 3 }}>{linkError}</div>
+              <button
+                type="button"
+                className="btn btn-soft"
+                disabled={busy}
+                style={{ marginTop: 9 }}
+                onClick={async () => {
+                  setBusy(true);
+                  const again = await createPaymentLink(current, current.amountPaise);
+                  setBusy(false);
+                  if (again.ok) {
+                    setLinkError("");
+                    toast("Payment link created");
+                  } else {
+                    setLinkError(again.error);
+                  }
+                }}
+              >
+                {busy ? "Asking Razorpay…" : "Try again"}
+              </button>
+            </div>
           )}
 
           {current.claimCode && (
@@ -223,11 +274,19 @@ export default function EnrolModal({ prefill, onClose }: Props) {
               </select>
             </Field>
 
-            <Field label="Payment link" error={errors.paymentLink} hint="Paste the Razorpay payment link to send them. Optional.">
-              <input value={paymentLink} onChange={(e) => setPaymentLink(e.target.value)} placeholder="https://rzp.io/rzp/…" style={input} />
+            <Field
+              label="Payment link"
+              error={errors.paymentLink}
+              hint="Leave blank and Razorpay makes one for the amount below. Paste a link only to reuse one you already have."
+            >
+              <input value={paymentLink} onChange={(e) => setPaymentLink(e.target.value)} placeholder="Made for you — or paste one" style={input} />
             </Field>
 
-            <Field label="Amount (₹)" error={errors.amount} hint={course ? `Course fee ${inr(course.pricePaise)}` : undefined}>
+            <Field
+              label="Amount (₹)"
+              error={errors.amount}
+              hint={batch ? `Batch price ${inr(batch.pricePaise)} — charge less to give a discount` : undefined}
+            >
               <input
                 value={amount}
                 onChange={(e) => { setAmount(e.target.value); setAmountTouched(true); }}

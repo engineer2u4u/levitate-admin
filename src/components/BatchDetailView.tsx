@@ -6,6 +6,7 @@ import { useState } from "react";
 import { inr } from "@/lib/format";
 import {
   activeEnrolments,
+  assessmentFor,
   batchTaken,
   batchWindow,
   isModuleOpen,
@@ -17,10 +18,12 @@ import {
   setEnrolmentStatus,
   unassignLearner,
   updateBatch,
+  zoomFor,
 } from "@/lib/store";
 import { useAdminData, useCatalogStatus } from "@/lib/useStore";
 import type { BatchStatus, Enrolment, Session } from "@/lib/types";
 import AssignLearnerModal from "./AssignLearnerModal";
+import BatchZoomPanel from "./BatchZoomPanel";
 import BatchModal from "./BatchModal";
 import ModuleUnlockPanel from "./ModuleUnlockPanel";
 import { batchTone, dateRange } from "./BatchesView";
@@ -121,6 +124,7 @@ function ModuleDots({ enrolment }: { enrolment: Enrolment }) {
   if (!modules.length || !enrolment.userId) return null;
 
   const done = new Set(progressFor(data, enrolment)?.completedItems ?? []);
+  const sat = assessmentFor(data, enrolment);
   const total = modules.reduce((a, m) => a + (m.itemIds?.length ?? 0), 0);
   const finished = modules.reduce((a, m) => a + (m.itemIds ?? []).filter((id) => done.has(id)).length, 0);
 
@@ -140,6 +144,15 @@ function ModuleDots({ enrolment }: { enrolment: Enrolment }) {
         );
       })}
       <span style={{ font: "600 9.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginLeft: 4 }}>{finished}/{total}</span>
+      {/* The assessment's score, which is the one mark that is kept. */}
+      {sat && (
+        <span
+          title={`${sat.attempts} attempt${sat.attempts === 1 ? "" : "s"}, last on ${new Date(sat.lastAttemptAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
+          style={{ font: "700 9.5px 'Plus Jakarta Sans',sans-serif", color: sat.everPassed ? "#136f6a" : "#b4453f", marginLeft: 4 }}
+        >
+          · Assessment {sat.bestScore}/{sat.total}
+        </span>
+      )}
     </div>
   );
 }
@@ -280,6 +293,7 @@ export default function BatchDetailView() {
             </div>
             {sessions.map((s) => {
               const link = linkFor(data, s.id);
+              const room = zoomFor(data, s);
               return (
                 <div key={s.id} className="row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.8fr) minmax(0,1.2fr) minmax(0,.8fr)", gap: 12, padding: "11px 16px", borderBottom: "1px solid var(--surface)", alignItems: "center" }}>
                   <div>
@@ -288,8 +302,12 @@ export default function BatchDetailView() {
                   </div>
                   <div style={{ font: "500 11.5px/1.5 'Plus Jakarta Sans',sans-serif", color: "var(--body)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.topic || <span style={{ color: "var(--muted)" }}>—</span>}</div>
                   <div style={{ font: "600 10.5px 'Plus Jakarta Sans',sans-serif", minWidth: 0 }}>
-                    {link?.joinUrl ? (
-                      <a href={link.joinUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#136f6a" }}>Join link set ↗</a>
+                    {/* A session's own room, the batch's, or none — three
+                        states that must not look like two. */}
+                    {room.joinUrl ? (
+                      <a href={room.joinUrl} target="_blank" rel="noopener noreferrer" style={{ color: room.inherited ? "var(--muted)" : "#136f6a" }}>
+                        {room.inherited ? "Batch room ↗" : "Join link set ↗"}
+                      </a>
                     ) : (
                       <span style={{ color: "#9a6a12" }}>No link yet</span>
                     )}
@@ -317,6 +335,8 @@ export default function BatchDetailView() {
           </div>
         )}
       </div>
+
+      <BatchZoomPanel batch={batch} canWrite={canWrite} />
 
       <ModuleUnlockPanel batch={batch} canWrite={canWrite} />
 
