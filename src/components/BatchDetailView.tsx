@@ -66,7 +66,30 @@ function LearnerRow({ enrolment: e, canWrite }: { enrolment: Enrolment; canWrite
       <div>
         {statusPill(e)}
         <div style={{ font: "500 10px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginTop: 3 }}>
-          {e.userId ? "Signed up on the LMS" : e.claimCode ? <>Not signed up · code <strong style={{ color: "var(--body)", letterSpacing: ".04em" }}>{e.claimCode}</strong></> : "No LMS account yet"}
+          {e.userId ? (
+            "Signed up on the LMS"
+          ) : e.claimCode ? (
+            <>
+              Not signed up · code{" "}
+              {/* Clickable because this is where the code is looked up weeks
+                  later, when the enrolment screen it was issued on is gone. */}
+              <button
+                type="button"
+                title="Copy this enrolment code"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(e.claimCode).then(
+                    () => toast("Enrolment code copied"),
+                    () => toast("Could not copy — select it and copy manually"),
+                  );
+                }}
+                style={{ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10px 'Plus Jakarta Sans',sans-serif", color: "var(--body)", letterSpacing: ".04em", textDecoration: "underline dotted" }}
+              >
+                {e.claimCode}
+              </button>
+            </>
+          ) : (
+            "No LMS account yet"
+          )}
         </div>
         <ModuleDots enrolment={e} />
       </div>

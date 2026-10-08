@@ -204,8 +204,26 @@ export default function EnrolModal({ prefill, onClose }: Props) {
 
           {current.claimCode && (
             <Field label="Enrolment code" hint="Included in the messages below. They enter it once after signing up on the LMS, and the course appears in their account.">
-              <div style={{ border: "1px dashed #2fc4bc", borderRadius: 8, padding: "10px 12px", font: "800 16px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)", letterSpacing: ".08em", background: "#f3fcfb", textAlign: "center" }}>
-                {current.claimCode}
+              {/* The code is in both share messages already; this is for the
+                  times it is wanted on its own — read out on a call, pasted
+                  into a reply. A code retyped by eye is a code mistyped. */}
+              <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+                <div style={{ flex: 1, border: "1px dashed #2fc4bc", borderRadius: 8, padding: "10px 12px", font: "800 16px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)", letterSpacing: ".08em", background: "#f3fcfb", textAlign: "center" }}>
+                  {current.claimCode}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-soft"
+                  style={{ flex: "none" }}
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(current.claimCode).then(
+                      () => toast("Enrolment code copied"),
+                      () => toast("Could not copy — select it and copy manually"),
+                    );
+                  }}
+                >
+                  Copy code
+                </button>
               </div>
             </Field>
           )}
