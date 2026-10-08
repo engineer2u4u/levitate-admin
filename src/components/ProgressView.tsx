@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { listProgress, outlineFor, summarise, type CourseOutline, type ProgressRow } from "@/lib/progress";
 import { useAdminData } from "@/lib/useStore";
 import { initials } from "@/lib/format";
-import { EmptyState, Modal, Pill, card, th } from "./ui";
+import { EmptyState, Modal, Pager, Pill, card, th } from "./ui";
+import { usePaged } from "@/lib/usePaged";
 
 const GRID = "2fr 1.6fr 1.2fr 1fr 1fr";
 
@@ -29,6 +30,9 @@ export default function ProgressView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<ProgressRow | null>(null);
+  // Nothing filters this screen, so the key is constant — the rows only change
+  // when they load.
+  const paged = usePaged(rows, "progress");
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +84,7 @@ export default function ProgressView() {
           <div style={th}>Last active</div>
         </div>
 
-        {rows.map((r) => {
+        {paged.slice.map((r) => {
           const outline = outlineFor(courses, r.course_slug);
           const s = summarise(r, outline);
           return (
@@ -129,6 +133,16 @@ export default function ProgressView() {
             </button>
           );
         })}
+
+        <Pager
+          page={paged.page}
+          pages={paged.pages}
+          from={paged.from}
+          to={paged.to}
+          total={paged.total}
+          noun="learners"
+          onPage={paged.setPage}
+        />
       </div>
 
       {open && <JourneyModal row={open} outline={outlineFor(courses, open.course_slug)} onClose={() => setOpen(null)} />}

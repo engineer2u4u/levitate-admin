@@ -11,7 +11,8 @@ import {
   type Enquiry,
   type EnquiryForm,
 } from "@/lib/enquiries";
-import { EmptyState, Modal, ModalActions, Pill, card, input, label, th } from "./ui";
+import { EmptyState, Modal, ModalActions, Pager, Pill, card, input, label, th } from "./ui";
+import { usePaged } from "@/lib/usePaged";
 
 const SANS = "'Plus Jakarta Sans',sans-serif";
 // minmax(0,…) rather than a bare fr: an fr track never shrinks below its
@@ -109,6 +110,10 @@ export default function EnquiriesView() {
       return true;
     });
   }, [rows, q, form, programme, source, from, to]);
+
+  // Paged after filtering, so the count above is the real one, and the page
+  // resets whenever the filters change under it.
+  const paged = usePaged(shown, [q, form, programme, source, from, to].join("\u001f"));
 
   const filtered = q || form !== "all" || programme !== "all" || source !== "all" || from || to;
   const clear = () => { setQ(""); setForm("all"); setProgramme("all"); setSource("all"); setFrom(""); setTo(""); };
@@ -245,7 +250,7 @@ export default function EnquiriesView() {
             No enquiries match these filters.
           </div>
         ) : (
-          shown.map((r) => (
+          paged.slice.map((r) => (
             <button
               key={r.id}
               type="button"
@@ -295,6 +300,8 @@ export default function EnquiriesView() {
             </button>
           ))
         )}
+
+        <Pager page={paged.page} pages={paged.pages} from={paged.from} to={paged.to} total={paged.total} noun="enquiries" onPage={paged.setPage} />
       </div>
 
       {/* ---------------------------------------------------------- detail */}

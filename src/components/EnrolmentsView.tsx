@@ -20,7 +20,8 @@ import { useAdminData, useCatalogStatus } from "@/lib/useStore";
 import type { Enrolment, LegacyEnrolment } from "@/lib/types";
 import CatalogState from "./CatalogState";
 import EnrolmentShare from "./EnrolmentShare";
-import { EmptyState, Pill, card, input, th } from "./ui";
+import { EmptyState, Pager, Pill, card, input, th } from "./ui";
+import { usePaged } from "@/lib/usePaged";
 import { PAYMENT_FILTERS, useEnrolDialog, usePaymentFilter, useToast } from "./AdminShell";
 import { useCanWrite } from "./AuthGate";
 
@@ -165,6 +166,11 @@ export default function EnrolmentsView() {
   // Course and batch cannot narrow someone who is on neither, so choosing
   // "No enrolment" with either set would silently show nothing.
   const showingAccounts = account === "No enrolment";
+
+  // Two lists, two pagers: switching the account filter swaps which one is on
+  // screen, so each keeps its own page rather than inheriting the other's.
+  const pagedRows = usePaged(rows, [filter, account, courseId, batchId, query].join("\u001f"));
+  const pagedAccounts = usePaged(unenrolled, query);
 
   const active = data.enrolments.filter((e) => e.status !== "cancelled");
   const paidTotal = active.filter((e) => e.status === "paid").reduce((a, e) => a + e.amountPaise, 0);
@@ -345,7 +351,7 @@ export default function EnrolmentsView() {
               <div style={{ display: "grid", gridTemplateColumns: ACCOUNT_GRID, gap: 12, padding: "10px 18px", background: "#f8fafc", borderBottom: "1px solid var(--line-soft)" }}>
                 {["Account", "Organisation", "Signed up"].map((c) => <div key={c} style={th}>{c}</div>)}
               </div>
-              {unenrolled.map((a) => (
+              {pagedAccounts.slice.map((a) => (
                 <div key={a.id} className="row-hover" style={{ display: "grid", gridTemplateColumns: ACCOUNT_GRID, gap: 12, padding: "13px 18px", borderBottom: "1px solid var(--surface)", alignItems: "center" }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ font: "700 12px 'Plus Jakarta Sans',sans-serif", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
@@ -355,6 +361,15 @@ export default function EnrolmentsView() {
                   <div style={{ font: "500 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--body)" }}>{day(a.joinedAt)}</div>
                 </div>
               ))}
+              <Pager
+                page={pagedAccounts.page}
+                pages={pagedAccounts.pages}
+                from={pagedAccounts.from}
+                to={pagedAccounts.to}
+                total={pagedAccounts.total}
+                noun="accounts"
+                onPage={pagedAccounts.setPage}
+              />
             </div>
           )
         ) : rows.length === 0 ? (
@@ -367,7 +382,7 @@ export default function EnrolmentsView() {
               {(canWrite ? COLUMNS : COLUMNS.slice(0, -1)).map((c) => <div key={c} style={th}>{c}</div>)}
             </div>
 
-            {rows.map((e) => {
+            {pagedRows.slice.map((e) => {
               const course = data.courses.find((c) => c.id === e.courseId);
               const batch = data.batches.find((b) => b.id === e.batchId);
               const working = busy === e.id;
@@ -464,6 +479,15 @@ export default function EnrolmentsView() {
                 </div>
               );
             })}
+            <Pager
+              page={pagedRows.page}
+              pages={pagedRows.pages}
+              from={pagedRows.from}
+              to={pagedRows.to}
+              total={pagedRows.total}
+              noun="enrolments"
+              onPage={pagedRows.setPage}
+            />
           </div>
         )}
       </div>

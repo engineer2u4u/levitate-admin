@@ -147,6 +147,54 @@ export function ModalActions({ children }: { children: ReactNode }) {
   return <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 4 }}>{children}</div>;
 }
 
+/**
+ * The footer under a paged table.
+ *
+ * Says where you are in words rather than only in page numbers, because "26–50
+ * of 180" answers the question people actually have. Hidden entirely on a
+ * single page: a pager under eleven rows is furniture.
+ */
+export function Pager({
+  page,
+  pages,
+  from,
+  to,
+  total,
+  noun,
+  onPage,
+}: {
+  page: number;
+  pages: number;
+  from: number;
+  to: number;
+  total: number;
+  noun: string;
+  onPage: (page: number) => void;
+}) {
+  if (pages <= 1) return null;
+
+  const step = (by: number) => onPage(Math.min(pages, Math.max(1, page + by)));
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 16px", borderTop: "1px solid var(--line-soft)", flexWrap: "wrap" }}>
+      <div style={{ font: "500 11px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)" }}>
+        Showing {from}–{to} of {total} {noun}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button type="button" className="btn btn-soft" disabled={page <= 1} onClick={() => step(-1)}>
+          ← Previous
+        </button>
+        <span style={{ font: "600 11px 'Plus Jakarta Sans',sans-serif", color: "var(--body)" }}>
+          Page {page} of {pages}
+        </span>
+        <button type="button" className="btn btn-soft" disabled={page >= pages} onClick={() => step(1)}>
+          Next →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
   return (
     <div style={{ ...card, padding: "44px 34px", textAlign: "center" }}>
