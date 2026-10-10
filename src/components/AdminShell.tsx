@@ -36,8 +36,10 @@ const FilterCtx = createContext<{ filter: PaymentFilter; setFilter: (f: PaymentF
 export const usePaymentFilter = () => useContext(FilterCtx);
 
 const NAV = [
-  // First: new enquiries are the thing most worth seeing on arrival.
-  { href: "/enquiries", label: "Enquiries" },
+  // Enquiries is hidden for now — put the line back to show it again. The
+  // screen and its route are untouched, so /enquiries still opens for anyone
+  // who has the link; it is only off the sidebar.
+  // { href: "/enquiries", label: "Enquiries" },
   { href: "/enrolments", label: "Enrolments" },
   { href: "/courses", label: "Courses" },
   { href: "/batches", label: "Batches" },
