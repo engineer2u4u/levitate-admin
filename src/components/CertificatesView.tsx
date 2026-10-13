@@ -161,6 +161,13 @@ export default function CertificatesView() {
     }
     const res = await recordCertificate(issue);
     if (!res.ok) {
+      // The register not existing yet is a deployment state, not a refusal:
+      // the office should still be able to print, and should be told that this
+      // one is not in the register so it can be re-recorded afterwards.
+      if (res.registerMissing) {
+        toast("Printing without recording — the certificate register is not set up on the database yet");
+        return true;
+      }
       toast(res.error);
       return false;
     }

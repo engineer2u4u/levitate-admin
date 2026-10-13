@@ -1035,25 +1035,48 @@ export async function recordCertificate(issue: {
   hours: string;
   pdcs: string;
   cpdHours: string;
-}): Promise<{ ok: true; certificate: Certificate } | Failure> {
-  const res = await run<CertificateRow>((db) =>
-    db.rpc("admin_record_certificate", {
-      p_cert_no: issue.certificateId.trim(),
-      p_name: issue.recipientName.trim(),
-      p_course_title: issue.courseName.trim(),
-      p_template: issue.template,
-      // The form holds a human date ("13 Oct 2026"); the register holds a real
-      // one, and an unparseable date must not cost the whole record.
-      p_completed_on: asDate(issue.completedOn),
-      p_hours: issue.hours,
-      p_pdcs: issue.pdcs,
-      p_cpd_hours: issue.cpdHours,
-      p_course_id: null,
-    }).single(),
-  );
-  if (!res.ok) return res;
+}): Promise<
+  | { ok: true; certificate: Certificate }
+  | (Failure & { registerMissing?: boolean })
+> {
+  // Called directly rather than through `run`, because which failure this is
+  // changes what the screen should do: a register that is not there yet is not
+  // the same as a register that said no. See `registerMissing` below.
+  let row: CertificateRow;
+  try {
+    const db = await getClient();
+    const { data, error } = await db
+      .rpc("admin_record_certificate", {
+        p_cert_no: issue.certificateId.trim(),
+        p_name: issue.recipientName.trim(),
+        p_course_title: issue.courseName.trim(),
+        p_template: issue.template,
+        // The form holds a human date ("13 Oct 2026"); the register holds a
+        // real one, and an unparseable date must not cost the whole record.
+        p_completed_on: asDate(issue.completedOn),
+        p_hours: issue.hours,
+        p_pdcs: issue.pdcs,
+        p_cpd_hours: issue.cpdHours,
+        p_course_id: null,
+      })
+      .single();
 
-  const cert = certificateFromRow(res.data);
+    if (error) {
+      // The window between this screen being deployed and migration 0032
+      // being run: the function simply is not there. Distinguished from every
+      // other failure so the screen can let the download through with a
+      // warning rather than refuse to print at all — "the register does not
+      // exist yet" is a deployment state, not a refusal.
+      const registerMissing = error.code === "PGRST202" || error.code === "42883";
+      return { ok: false, error: friendly(error), registerMissing };
+    }
+    if (!data) return { ok: false, error: NOT_SAVED };
+    row = data as CertificateRow;
+  } catch (e) {
+    return { ok: false, error: friendly({ message: e instanceof Error ? e.message : String(e) }) };
+  }
+
+  const cert = certificateFromRow(row);
   setCatalog({
     certificates: catalog.certificates.some((c) => c.id === cert.id)
       ? catalog.certificates.map((c) => (c.id === cert.id ? cert : c))
