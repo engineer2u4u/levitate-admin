@@ -158,3 +158,10 @@ from every IP. Site Tools → Devs → SSH Keys Manager shows the current userna
 Site Tools → Site → IP and Name Servers shows the current Site IP.
 `ssh.levitatepeoplesoft.com`, which Site Tools prints as the hostname, has no
 DNS record, so the IP goes in directly.
+
+The symptom lies in one more way worth knowing: the old IP still answers and
+still serves current content, because both addresses reach the same filesystem
+— the md5 of `public_html/index.html` read over SSH from the new IP matches the
+page fetched over HTTPS pinned to the old one. So "the site is up" says nothing
+about which server you can deploy to. SSH is the only thing that distinguishes
+them.
