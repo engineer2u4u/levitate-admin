@@ -128,3 +128,33 @@ subfolder.
 Sign-in needs Supabase configured — see [SUPABASE.md](SUPABASE.md). Add the
 deployed admin origin to **Redirect URLs** in the Supabase dashboard, or invite
 links will land on the learner site instead of here.
+
+### Shipping it
+
+Live at `levitatepeoplesoft.com/admin-panel`, which is a folder inside the main
+site's web root on SiteGround. The site itself is deployed from the `Levitate`
+repository by `scripts/deploy.sh`; this build is uploaded separately, and the
+two must not tread on each other — that script's `PRESERVE` list keeps
+`admin-panel` from being touched, and this upload only ever extracts into that
+one folder.
+
+```sh
+npm run build
+tar -czf /tmp/admin-out.tgz -C out .
+scp -P 18765 -i ~/.ssh/levitate-deploy /tmp/admin-out.tgz u5217-g06ulvpdaipo@35.213.177.6:~/
+ssh -p 18765 -i ~/.ssh/levitate-deploy u5217-g06ulvpdaipo@35.213.177.6 \
+  'cd ~/www/levitatepeoplesoft.com/public_html && tar -xzf ~/admin-out.tgz -C admin-panel && rm ~/admin-out.tgz'
+```
+
+Files are added and replaced, never deleted, so a build that drops a route
+leaves the old files behind rather than 404ing mid-navigation.
+
+**If SSH starts refusing, check the user and IP before the key.** The account
+was migrated on 13 Oct 2026 and both changed together —
+`u47-jossnzylkm8o@35.213.176.216` became the pair above. The old one worked
+right up to the migration and then failed as `Permission denied (publickey)`,
+which reads like a revoked key and is not: the key was still listed and allowed
+from every IP. Site Tools → Devs → SSH Keys Manager shows the current username;
+Site Tools → Site → IP and Name Servers shows the current Site IP.
+`ssh.levitatepeoplesoft.com`, which Site Tools prints as the hostname, has no
+DNS record, so the IP goes in directly.
