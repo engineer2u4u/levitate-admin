@@ -401,11 +401,17 @@ export type PaymentMethod = "razorpay" | "link" | "invoice" | "offline";
  */
 export type Certificate = {
   id: string;
-  /** "2026-09-001" — sequential within the month it was issued. */
+  /**
+   * "LVT-2610-K7QF3M" — the month it was issued, then six characters from an
+   * alphabet with no 0/O/1/I/L, since these get read off paper and typed back
+   * in. Numbers issued before October 2026 are the older "2026-09-001".
+   */
   certNo: string;
-  enrolmentId: string;
+  /** Null for one printed by hand for someone who held no seat. */
+  enrolmentId: string | null;
   userId: string | null;
-  courseId: string;
+  /** Null when the course printed on it is not one in the catalogue. */
+  courseId: string | null;
   batchId: string | null;
   recipientName: string;
   courseTitle: string;
@@ -416,6 +422,10 @@ export type Certificate = {
   issuedBy: string | null;
   revokedAt: string | null;
   revokedReason: string;
+  /** Which artwork it was printed on. */
+  template: string;
+  /** How it came about: earned on the LMS, or printed from the admin. */
+  source: "course" | "manual";
 };
 
 export type Enrolment = {

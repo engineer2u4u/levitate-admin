@@ -149,11 +149,30 @@ export function fitBlock(count: number, centre: number, steps: number[], sizes: 
   return { step, size, startY: centre - ((count - 1) * step) / 2 };
 }
 
-/** A readable id: 2026-08-001. The sequence is the operator's to keep. */
+/**
+ * The alphabet certificate ids are drawn from.
+ *
+ * No 0, O, 1, I or L. A certificate number's whole job is to be read off a
+ * printed plate and typed back in, and those five are what gets mistyped.
+ */
+const ID_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+
+/**
+ * An id like LVT-2610-K7QF3M: the month, then six random characters.
+ *
+ * The same shape the database's `new_cert_id()` produces, and this is the
+ * fallback for when that cannot be reached — the register's unique index is
+ * what actually guarantees no two certificates share a number, so a locally
+ * generated id is safe to offer and safe to be refused.
+ */
 export function suggestId(date = new Date()): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}-001`;
+  const yy = String(date.getFullYear()).slice(-2);
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  let body = "";
+  for (let i = 0; i < 6; i++) {
+    body += ID_ALPHABET[Math.floor(Math.random() * ID_ALPHABET.length)];
+  }
+  return `LVT-${yy}${mm}-${body}`;
 }
 
 export const today = () =>

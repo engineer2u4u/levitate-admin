@@ -10,10 +10,10 @@ import {
   fileStem,
   plateExists,
   sampleMaskColors,
-  suggestId,
   svgToPng,
   today,
 } from "@/lib/certificate";
+import { nextCertificateId, recordCertificate } from "@/lib/store";
 import { useAdminData } from "@/lib/useStore";
 import { CERTIFICATE_TEMPLATES, type CertificateIssue, type CertificateTemplate } from "@/lib/types";
 import CertificateArt from "./CertificateArt";
@@ -43,8 +43,22 @@ export default function CertificatesView() {
     hours: "",
     pdcs: "",
     cpdHours: "",
-    certificateId: suggestId(),
+    // Filled on mount, not here: the id is random, and a random value chosen
+    // while the page is prerendered would not match the one hydration picks.
+    certificateId: "",
   });
+
+  // A free id from the register as soon as the screen opens, so the common
+  // case — fill in a name, download — never needs the button.
+  useEffect(() => {
+    let alive = true;
+    void nextCertificateId().then((id) => {
+      if (alive) setIssue((i) => (i.certificateId ? i : { ...i, certificateId: id }));
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const set = <K extends keyof CertificateIssue>(key: K, value: CertificateIssue[K]) => {
     setIssue((i) => ({ ...i, [key]: value }));
   };
@@ -125,11 +139,60 @@ export default function CertificatesView() {
     }
   };
 
+  /**
+   * Put what is about to go out into the register.
+   *
+   * A certificate claims to be verifiable, so a number that exists on paper
+   * and nowhere else is a broken promise. Recorded before the download rather
+   * than after, because the download is the irreversible half — once the file
+   * is on someone's disk, declining to record it is the wrong way round.
+   *
+   * A failure here stops the download and says why: issuing a number that
+   * cannot be checked later is worse than not issuing one now.
+   */
+  const recordThis = async (): Promise<boolean> => {
+    if (!issue.recipientName.trim()) {
+      toast("Enter the recipient's name first");
+      return false;
+    }
+    if (!issue.certificateId.trim()) {
+      toast("Give the certificate an id first — Generate makes one");
+      return false;
+    }
+    const res = await recordCertificate(issue);
+    if (!res.ok) {
+      toast(res.error);
+      return false;
+    }
+    return true;
+  };
+
   const downloadPng = async () => {
     setBusy("png");
+    if (!(await recordThis())) {
+      setBusy("");
+      return;
+    }
     const blob = await render();
     setBusy("");
     if (blob) downloadBlob(blob, `${fileStem(issue)}.png`);
+  };
+
+  const downloadPdf = async () => {
+    setBusy("pdf");
+    const ok = await recordThis();
+    setBusy("");
+    // The print dialog is the browser's; all we can do is open it on a
+    // certificate whose number is already in the register.
+    if (ok) window.print();
+  };
+
+  /** A fresh id, for the next certificate after one has been downloaded. */
+  const regenerate = async () => {
+    setBusy("id");
+    const id = await nextCertificateId();
+    setBusy("");
+    set("certificateId", id);
   };
 
   const working = (key: string) => busy === key;
@@ -242,15 +305,35 @@ export default function CertificatesView() {
             )}
           </div>
 
-          {issue.template === "excellence" && (
-            <Field label="Certificate ID">
-              <input value={issue.certificateId} onChange={(e) => set("certificateId", e.target.value)} placeholder="2026-09-001" style={input} />
-            </Field>
-          )}
+          {/* Shown for every format, not just the one that prints it: the id
+              is what the register is keyed on, so a certificate without one
+              cannot be recorded and therefore cannot be checked later. */}
+          <Field
+            label="Certificate ID"
+            hint="Recorded in the register when you download, so the number can be checked later. Generate asks the database for one nothing is using."
+          >
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={issue.certificateId}
+                onChange={(e) => set("certificateId", e.target.value)}
+                placeholder="LVT-2610-K7QF3M"
+                style={{ ...input, letterSpacing: ".04em" }}
+              />
+              <button
+                type="button"
+                className="btn btn-soft"
+                onClick={() => void regenerate()}
+                disabled={Boolean(busy)}
+                style={{ flex: "none" }}
+              >
+                {working("id") ? "…" : "Generate"}
+              </button>
+            </div>
+          </Field>
 
           <div style={{ borderTop: "1px solid var(--line-soft)", paddingTop: 13, display: "flex", flexDirection: "column", gap: 9 }}>
-            <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-              Download PDF
+            <button type="button" className="btn btn-primary" onClick={() => void downloadPdf()} disabled={Boolean(busy)}>
+              {working("pdf") ? "Recording…" : "Download PDF"}
             </button>
             <div style={{ font: "500 10px/1.5 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginTop: -3 }}>
               Opens your browser&rsquo;s print dialog — choose <strong style={{ color: "var(--body)" }}>Save as PDF</strong>, and turn

@@ -389,7 +389,13 @@ function Excellence({ issue, settings, plate, maskColors, plateHasTitle }: Omit<
       {/* Sampled from the plate, so these patch correctly over the gradient. */}
       {mask && <Patch r={M.certId} fill={patch("certId")} />}
       {mask && <Patch r={M.issued} fill={patch("issued")} />}
-      <text x="362" y="805" textAnchor="end" fontFamily={SANS} fontSize="17" fontWeight="800" fill="#ffffff">
+      {/* Measured, not guessed: at 17px bold "LVT-2610-K7QF3M" is 163px wide
+          and, right-aligned at 362, reaches x=199 — a pixel and a half outside
+          the patch that covers the plate's own lifted text, so the first
+          character would sit on the artwork. 15px holds the same id at 144,
+          inside the slot with room to spare. Shorter ids keep the larger size;
+          the older `2026-10-001` numbers are 115px either way. */}
+      <text x="362" y="805" textAnchor="end" fontFamily={SANS} fontSize={issue.certificateId.length > 12 ? 15 : 17} fontWeight="800" fill="#ffffff">
         {issue.certificateId || "—"}
       </text>
       <text x="362" y="852" textAnchor="end" fontFamily={SANS} fontSize="17" fontWeight="800" fill="#ffffff">

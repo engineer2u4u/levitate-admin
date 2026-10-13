@@ -144,11 +144,12 @@ export type ModuleUnlockRow = {
 };
 
 export type CertificateRow = {
-  id: string; cert_no: string; enrolment_id: string; user_id: string | null;
-  course_id: string; batch_id: string | null;
+  id: string; cert_no: string; enrolment_id: string | null; user_id: string | null;
+  course_id: string | null; batch_id: string | null;
   recipient_name: string; course_title: string; hours: string;
   completed_on: string; issued_at: string; issued_by: string | null;
   revoked_at: string | null; revoked_reason: string | null;
+  template: string | null; source: string | null;
 };
 
 export const certificateFromRow = (r: CertificateRow): Certificate => ({
@@ -166,6 +167,9 @@ export const certificateFromRow = (r: CertificateRow): Certificate => ({
   issuedBy: r.issued_by,
   revokedAt: r.revoked_at,
   revokedReason: r.revoked_reason ?? "",
+  template: r.template ?? "excellence",
+  // Rows written before the register held hand-printed ones were all earned.
+  source: r.source === "manual" ? "manual" : "course",
 });
 
 export type EnrolmentRow = {

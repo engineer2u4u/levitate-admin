@@ -21,7 +21,7 @@ import type {
   SessionInput,
   SessionLink,
 } from "./types";
-import { DEFAULT_CERTIFICATE } from "./certificate";
+import { DEFAULT_CERTIFICATE, suggestId } from "./certificate";
 import {
   batchFromRow,
   batchLinkFromRow,
@@ -1001,6 +1001,74 @@ export async function issueCertificate(
       : [cert, ...catalog.certificates],
   });
   return { ok: true, certificate: cert };
+}
+
+/**
+ * A certificate id that nothing in the register is using.
+ *
+ * Asked of the database, which checks, rather than generated here and hoped
+ * about. A locally made one is the fallback for an offline screen: it has the
+ * same shape, and the register's unique index is the real arbiter either way.
+ */
+export async function nextCertificateId(): Promise<string> {
+  const res = await run<string>((db) => db.rpc("next_certificate_id").single());
+  return res.ok && typeof res.data === "string" && res.data ? res.data : suggestId();
+}
+
+/**
+ * Records a certificate printed from the Certificates screen.
+ *
+ * The screen prints for people who were never enrolled — event attendees,
+ * guests — so there is no seat to hang the record on, and until this existed
+ * the number on the plate was in nobody's register. Called on download, so
+ * what went out is what is recorded.
+ *
+ * Idempotent on the id: the same certificate taken as a PDF and then as a PNG
+ * is one row, and re-downloading it does not mint a second number.
+ */
+export async function recordCertificate(issue: {
+  certificateId: string;
+  recipientName: string;
+  courseName: string;
+  template: string;
+  completedOn: string;
+  hours: string;
+  pdcs: string;
+  cpdHours: string;
+}): Promise<{ ok: true; certificate: Certificate } | Failure> {
+  const res = await run<CertificateRow>((db) =>
+    db.rpc("admin_record_certificate", {
+      p_cert_no: issue.certificateId.trim(),
+      p_name: issue.recipientName.trim(),
+      p_course_title: issue.courseName.trim(),
+      p_template: issue.template,
+      // The form holds a human date ("13 Oct 2026"); the register holds a real
+      // one, and an unparseable date must not cost the whole record.
+      p_completed_on: asDate(issue.completedOn),
+      p_hours: issue.hours,
+      p_pdcs: issue.pdcs,
+      p_cpd_hours: issue.cpdHours,
+      p_course_id: null,
+    }).single(),
+  );
+  if (!res.ok) return res;
+
+  const cert = certificateFromRow(res.data);
+  setCatalog({
+    certificates: catalog.certificates.some((c) => c.id === cert.id)
+      ? catalog.certificates.map((c) => (c.id === cert.id ? cert : c))
+      : [cert, ...catalog.certificates],
+  });
+  return { ok: true, certificate: cert };
+}
+
+/** "13 Oct 2026" as "2026-10-13", or null if it is not a date at all. */
+function asDate(text: string): string | null {
+  const t = new Date(text.trim());
+  if (Number.isNaN(t.getTime())) return null;
+  const mm = String(t.getMonth() + 1).padStart(2, "0");
+  const dd = String(t.getDate()).padStart(2, "0");
+  return `${t.getFullYear()}-${mm}-${dd}`;
 }
 
 /**
