@@ -389,13 +389,16 @@ function Excellence({ issue, settings, plate, maskColors, plateHasTitle }: Omit<
       {/* Sampled from the plate, so these patch correctly over the gradient. */}
       {mask && <Patch r={M.certId} fill={patch("certId")} />}
       {mask && <Patch r={M.issued} fill={patch("issued")} />}
-      {/* Measured, not guessed: at 17px bold "LVT-2610-K7QF3M" is 163px wide
-          and, right-aligned at 362, reaches x=199 — a pixel and a half outside
-          the patch that covers the plate's own lifted text, so the first
-          character would sit on the artwork. 15px holds the same id at 144,
-          inside the slot with room to spare. Shorter ids keep the larger size;
-          the older `2026-10-001` numbers are 115px either way. */}
-      <text x="362" y="805" textAnchor="end" fontFamily={SANS} fontSize={issue.certificateId.length > 12 ? 15 : 17} fontWeight="800" fill="#ffffff">
+      {/* There is 162px between the right edge at 362 and the plate's own
+          "Certificate ID" label, and a number has to fit whatever the
+          generator produces — not just a typical one. Measured in the real
+          font: at 17px the worst case "LVT-2610-WWWWWW" is 193px, at 15px it
+          is 170, and one id in 20,000 random ones still passed 162 there. At
+          13px the worst is 147 and the usual about 119 — roughly the footprint
+          the old `2026-10-001` had at 17px, so the number looks much as it
+          always did and no value of it can reach the label. Kept in step with
+          CertificatePlate.tsx on the website, which prints the same plate. */}
+      <text x="362" y="805" textAnchor="end" fontFamily={SANS} fontSize={issue.certificateId.length > 12 ? 13 : 17} fontWeight="800" fill="#ffffff">
         {issue.certificateId || "—"}
       </text>
       <text x="362" y="852" textAnchor="end" fontFamily={SANS} fontSize="17" fontWeight="800" fill="#ffffff">
