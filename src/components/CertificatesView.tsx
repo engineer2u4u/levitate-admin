@@ -34,6 +34,9 @@ export default function CertificatesView() {
   const [issue, setIssue] = useState<CertificateIssue>({
     template: "excellence",
     title: DEFAULT_CERTIFICATE_TITLE,
+    // Null rather than the settings' wording: the settings may still be
+    // loading, and the field shows what is inherited until it is typed over.
+    closingNote: null,
     recipientName: "",
     courseName: "",
     completedOn: today(),
@@ -204,6 +207,21 @@ export default function CertificatesView() {
               style={{ ...input, resize: "vertical", lineHeight: 1.5 }}
             />
           </Field>
+
+          {issue.template === "excellence" && (
+            <Field
+              label="Under the…"
+              hint="The clause after the course name. Wrap a phrase in **asterisks** to set it bold. Clear it and the sentence ends at the course name — which is what a programme under no statute wants."
+            >
+              <textarea
+                value={issue.closingNote ?? data.certificate.closingNote}
+                onChange={(e) => set("closingNote", e.target.value)}
+                rows={2}
+                placeholder="under the **Prevention of Sexual Harassment at Workplace** (POSH Act, 2013)."
+                style={{ ...input, resize: "vertical", lineHeight: 1.5 }}
+              />
+            </Field>
+          )}
 
           <div className="form-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <Field label={issue.template === "cpd" ? "Date of CPD activity" : "Completed on"}>

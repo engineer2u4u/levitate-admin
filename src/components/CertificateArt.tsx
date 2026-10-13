@@ -213,15 +213,27 @@ function Excellence({ issue, settings, plate, maskColors, plateHasTitle }: Omit<
   // which is how a changed title gets onto a plated certificate at all.
   const drawTitle = !plate || !plateHasTitle;
 
+  // Unset falls back to the settings; emptied on purpose means the programme
+  // sits under no statute, so the clause goes rather than naming the wrong one.
+  const closing = (issue.closingNote ?? settings.closingNote).trim();
+  const courseWords = richWords(issue.courseName || "Course name", true);
+  // The full stop lives at the end of the closing line. Without one it would
+  // be left hanging, so it moves onto the course name — and onto the word
+  // itself rather than standing alone, since words are set space-separated.
+  if (!closing && courseWords.length) {
+    const last = courseWords[courseWords.length - 1];
+    if (!/[.!?]$/.test(last.text)) last.text += ".";
+  }
+
   // One flowed sentence — lead-in, title in bold, closing line — because the
   // artwork sets the title on the same line as its lead-in. Laying them out as
   // separate blocks costs a line there is no room for.
   const bodyLines = wrapRich(
     [
       ...richWords("for satisfactorily completing the", false),
-      ...richWords(issue.courseName || "Course name", true),
+      ...courseWords,
       // `**…**` in the closing line marks what the artwork sets in bold.
-      ...parseRich(settings.closingNote),
+      ...(closing ? parseRich(closing) : []),
     ],
     76,
   );

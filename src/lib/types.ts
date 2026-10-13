@@ -144,6 +144,16 @@ export type CertificateIssue = {
    * instead.
    */
   title: string;
+  /**
+   * The clause after the course name, e.g. "under the **Prevention of Sexual
+   * Harassment at Workplace** (POSH Act, 2013)."
+   *
+   * Per certificate, because the statute is not the same for every programme —
+   * a DEIB certificate carried the POSH Act until this was editable. `null`
+   * means "whatever the settings say"; an empty string means the clause is
+   * dropped and the sentence ends at the course name.
+   */
+  closingNote: string | null;
   recipientName: string;
   courseName: string;
   completedOn: string;
