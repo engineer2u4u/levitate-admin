@@ -324,7 +324,21 @@ export async function sampleMaskColors(plateUrl: string, template: CertificateTe
  * Supabase URL. Fetching each one as a data URI sidesteps that entirely rather
  * than depending on the bucket's CORS headers staying as they are.
  */
-export async function svgToPng(svg: SVGSVGElement, size: { w: number; h: number }, scale = 2): Promise<Blob> {
+export async function svgToPng(
+  svg: SVGSVGElement,
+  size: { w: number; h: number },
+  scale = 2,
+  /**
+   * PNG for print, JPEG for email.
+   *
+   * Measured on the Award plate at 3200×1800: a 3200-wide PNG is 3.4MB and the
+   * same frame as JPEG at 0.92 is 504KB. The artwork is a photograph with
+   * gradients, which is what PNG is worst at and JPEG is for — and 5MB is past
+   * what most mail will carry.
+   */
+  format: "png" | "jpeg" = "png",
+  quality = 0.92,
+): Promise<Blob> {
   const clone = svg.cloneNode(true) as SVGSVGElement;
 
   const images = Array.from(clone.querySelectorAll("image"));
@@ -373,7 +387,12 @@ export async function svgToPng(svg: SVGSVGElement, size: { w: number; h: number 
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
 
     return await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("The image could not be encoded."))), "image/png");
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("The image could not be encoded."))),
+        `image/${format}`,
+        // Ignored for PNG, which is lossless.
+        quality,
+      );
     });
   } finally {
     URL.revokeObjectURL(url);

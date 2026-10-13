@@ -60,14 +60,28 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* Printing a certificate.
-   `visibility` rather than `display` so the certificate keeps its place in the
-   layout while everything around it goes; positioning it at the page origin at
-   exactly A4-landscape size makes the SVG fill one page with no margin. */
+
+   This used `visibility: hidden` on everything but the certificate, which
+   hides the rest of the screen but keeps its boxes: the sidebar is 1400px tall
+   and the form column taller still, so a one-page certificate printed as three
+   with two of them blank.
+
+   `display: none` instead, on everything that is not the certificate, not
+   inside it, and not one of its ancestors — the `:has()` test is what makes
+   that last part expressible, and it means this works from any screen rather
+   than naming the Certificates screen's own elements. The certificate itself
+   is then absolutely positioned at the page origin, out of the flow, so the
+   document is exactly one page tall. Measured at one page, against the three
+   this replaces. */
 @media print {
   @page { size: A4 landscape; margin: 0; }
 
-  body * { visibility: hidden; }
-  .cert-print, .cert-print * { visibility: visible; }
+  html, body { margin: 0 !important; padding: 0 !important; }
+
+  body *:not(:has(.cert-print)):not(.cert-print):not(.cert-print *) {
+    display: none !important;
+  }
+
   /* Size comes from the per-format rule the Certificates screen injects,
      since the two designs are different shapes. */
   .cert-print {
@@ -76,6 +90,10 @@ input:focus, select:focus, textarea:focus {
     left: 0;
     box-shadow: none !important;
   }
+  /* An inline SVG sits on a text baseline, which leaves a few pixels of
+     descender space under it. Harmless on screen, and a second page when the
+     artwork is already exactly one page tall. */
+  .cert-print svg { display: block; }
 }
 
 @keyframes toastIn {

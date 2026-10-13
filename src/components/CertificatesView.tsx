@@ -121,18 +121,19 @@ export default function CertificatesView() {
     };
   }, [plate, issue.template, canvas]);
 
-  const render = async (): Promise<Blob | null> => {
+  const render = async (format: "png" | "jpeg"): Promise<Blob | null> => {
     if (!svgRef.current) return null;
     if (!issue.recipientName.trim()) {
       toast("Enter the recipient's name first");
       return null;
     }
     try {
-      // 3× of a 1600×900 canvas is 4800×2700 — about 300dpi across an A4
-      // landscape, so a download prints as well as it reads on screen. The CPD
-      // plate is already print-size, and 3× of it would be a 42-megapixel
-      // canvas, past what some browsers will allocate.
-      return await svgToPng(svgRef.current, canvas, issue.template === "cpd" ? 1.5 : 3);
+      // 2×, not 3×. The Award plate's own artwork is 3200×1800, so a 4800-wide
+      // render upsamples it: the file doubles and the picture does not improve.
+      // 3200 wide is still about 270dpi across an A4 landscape. The CPD plate
+      // is already print-size, and even 1.5× of it is a 10-megapixel canvas.
+      const scale = issue.template === "cpd" ? 1 : 2;
+      return await svgToPng(svgRef.current, canvas, scale, format);
     } catch (err) {
       toast(err instanceof Error ? err.message : "The certificate could not be rendered");
       return null;
@@ -174,15 +175,15 @@ export default function CertificatesView() {
     return true;
   };
 
-  const downloadPng = async () => {
-    setBusy("png");
+  const downloadImage = async (format: "png" | "jpeg") => {
+    setBusy(format);
     if (!(await recordThis())) {
       setBusy("");
       return;
     }
-    const blob = await render();
+    const blob = await render(format);
     setBusy("");
-    if (blob) downloadBlob(blob, `${fileStem(issue)}.png`);
+    if (blob) downloadBlob(blob, `${fileStem(issue)}.${format === "jpeg" ? "jpg" : "png"}`);
   };
 
   const downloadPdf = async () => {
@@ -346,8 +347,15 @@ export default function CertificatesView() {
               Opens your browser&rsquo;s print dialog — choose <strong style={{ color: "var(--body)" }}>Save as PDF</strong>, and turn
               off any &ldquo;fit to page&rdquo; scaling. The text prints as vectors, so it stays sharp at any size.
             </div>
-            <button type="button" className="btn btn-soft" onClick={() => void downloadPng()} disabled={Boolean(busy)}>
-              {working("png") ? "Rendering…" : "Download PNG"}
+            {/* JPEG first, and named for what it is for: a 3200-wide PNG of
+                this artwork is about 3.4MB and the same frame as JPEG is about
+                500KB, which is the difference between a certificate that can
+                be emailed and one that bounces. */}
+            <button type="button" className="btn btn-soft" onClick={() => void downloadImage("jpeg")} disabled={Boolean(busy)}>
+              {working("jpeg") ? "Rendering…" : "Download JPEG — for email"}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => void downloadImage("png")} disabled={Boolean(busy)}>
+              {working("png") ? "Rendering…" : "Download PNG — lossless, larger"}
             </button>
           </div>
         </div>
