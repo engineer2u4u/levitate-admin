@@ -334,7 +334,19 @@ export default function BatchDetailView() {
                     ) : (
                       <span style={{ color: "#9a6a12" }}>No link yet</span>
                     )}
-                    {link?.recordingUrl && <div><a href={link.recordingUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--teal)" }}>Recording ↗</a></div>}
+                    {link?.recordingUrl && (
+                      <div>
+                        <a href={link.recordingUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--teal)" }}>Recording ↗</a>
+                        {/* Shown beside the link, and flagged when it is not
+                            there: a recording link without its passcode is a
+                            link nobody can open. */}
+                        {link.recordingPasscode ? (
+                          <span style={{ color: "var(--muted)", fontWeight: 500 }}> · {link.recordingPasscode}</span>
+                        ) : (
+                          <span style={{ color: "#9a6a12", fontWeight: 500 }}> · no passcode</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {canWrite && (
                     <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>

@@ -368,6 +368,9 @@ export type SessionLink = {
   meetingId: string;
   passcode: string;
   recordingUrl: string;
+  /** Zoom gives a cloud recording a passcode of its own, which is not the one
+   *  that opened the live room. */
+  recordingPasscode: string;
 };
 
 /**

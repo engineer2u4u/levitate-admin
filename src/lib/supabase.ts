@@ -133,6 +133,7 @@ export type BatchDbRow = {
 
 export type SessionLinkRow = {
   session_id: string; join_url: string; meeting_id: string; passcode: string; recording_url: string;
+  recording_passcode: string;
 };
 
 export type BatchLinkRow = {
@@ -396,6 +397,7 @@ export function sessionLinkFromRow(r: SessionLinkRow): SessionLink {
     meetingId: r.meeting_id ?? "",
     passcode: r.passcode ?? "",
     recordingUrl: r.recording_url ?? "",
+    recordingPasscode: r.recording_passcode ?? "",
   };
 }
 
@@ -406,6 +408,7 @@ export function sessionLinkToRow(l: SessionLink): SessionLinkRow {
     meeting_id: l.meetingId,
     passcode: l.passcode,
     recording_url: l.recordingUrl,
+    recording_passcode: l.recordingPasscode,
   };
 }
 

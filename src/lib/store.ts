@@ -729,8 +729,10 @@ export async function saveSessionLink(link: SessionLink): Promise<SaveResult> {
     meetingId: link.meetingId.trim(),
     passcode: link.passcode.trim(),
     recordingUrl: link.recordingUrl.trim(),
+    recordingPasscode: link.recordingPasscode.trim(),
   };
-  const empty = !clean.joinUrl && !clean.meetingId && !clean.passcode && !clean.recordingUrl;
+  const empty =
+    !clean.joinUrl && !clean.meetingId && !clean.passcode && !clean.recordingUrl && !clean.recordingPasscode;
   const before = catalog.sessionLinks;
   setCatalog({
     sessionLinks: [...before.filter((l) => l.sessionId !== clean.sessionId), ...(empty ? [] : [clean])],
@@ -1216,7 +1218,7 @@ export const batchLinkFor = (d: AdminData, batchId: string) => d.batchLinks.find
  * batch's. `inherited` says which, because "no link on this session" and "no
  * link anywhere" look the same on screen and mean very different things.
  */
-export function zoomFor(d: AdminData, session: Session): { joinUrl: string; meetingId: string; passcode: string; recordingUrl: string; inherited: boolean } {
+export function zoomFor(d: AdminData, session: Session): { joinUrl: string; meetingId: string; passcode: string; recordingUrl: string; recordingPasscode: string; inherited: boolean } {
   const own = linkFor(d, session.id);
   const batch = batchLinkFor(d, session.batchId);
   const hasOwn = Boolean(own?.joinUrl || own?.meetingId || own?.passcode);
@@ -1226,6 +1228,7 @@ export function zoomFor(d: AdminData, session: Session): { joinUrl: string; meet
     passcode: (hasOwn ? own?.passcode : batch?.passcode) ?? "",
     // A recording belongs to the sitting it was made at, never to the batch.
     recordingUrl: own?.recordingUrl ?? "",
+    recordingPasscode: own?.recordingPasscode ?? "",
     inherited: !hasOwn && Boolean(batch?.joinUrl || batch?.meetingId || batch?.passcode),
   };
 }

@@ -78,6 +78,7 @@ export default function SessionModal({ session, courseId, batchId, onClose }: Pr
   const [meetingId, setMeetingId] = useState(existingLink?.meetingId ?? "");
   const [passcode, setPasscode] = useState(existingLink?.passcode ?? "");
   const [recordingUrl, setRecordingUrl] = useState(existingLink?.recordingUrl ?? "");
+  const [recordingPasscode, setRecordingPasscode] = useState(existingLink?.recordingPasscode ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -112,7 +113,7 @@ export default function SessionModal({ session, courseId, batchId, onClose }: Pr
       seats: chosen.seats,
       status,
     };
-    const link = { joinUrl, meetingId, passcode, recordingUrl };
+    const link = { joinUrl, meetingId, passcode, recordingUrl, recordingPasscode };
 
     setSaving(true);
     const res = session ? await updateSession(session.id, payload, link) : await createSession(payload, link);
@@ -214,6 +215,12 @@ export default function SessionModal({ session, courseId, batchId, onClose }: Pr
               </div>
               <Field label="Recording link" error={errors.recordingUrl} hint="Add after the session, for anyone who missed it.">
                 <input value={recordingUrl} onChange={(e) => setRecordingUrl(e.target.value)} placeholder="https://…" style={input} />
+              </Field>
+              {/* Separate from the meeting passcode above, because Zoom gives
+                  the recording one of its own — handing over the meeting's
+                  leaves the learner at a prompt nothing they have will open. */}
+              <Field label="Recording passcode" hint="Zoom's own code for the recording, not the one that opened the room.">
+                <input value={recordingPasscode} onChange={(e) => setRecordingPasscode(e.target.value)} style={input} />
               </Field>
             </div>
 
