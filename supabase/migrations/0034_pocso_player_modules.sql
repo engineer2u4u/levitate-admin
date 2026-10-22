@@ -55,7 +55,7 @@ update public.courses
        'title', 'Case Laboratory',
        'summary', 'Ten judgments, worked through against the Act.',
        'release', 'manual',
-       'itemIds', jsonb_build_array('pc-case-lab'),
+       'itemIds', jsonb_build_array('pc-case-lab', 'pc-case-lab-link'),
        'lessons', '[]'::jsonb,
        'quiz', null
      ),

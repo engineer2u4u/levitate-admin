@@ -9,6 +9,7 @@ import {
   assessmentFor,
   batchTaken,
   batchWindow,
+  certificateFor,
   isModuleOpen,
   linkFor,
   progressFor,
@@ -21,7 +22,8 @@ import {
   zoomFor,
 } from "@/lib/store";
 import { useAdminData, useCatalogStatus } from "@/lib/useStore";
-import type { BatchStatus, Enrolment, Session } from "@/lib/types";
+import { downloadXlsx } from "@/lib/xlsx";
+import type { AdminData, BatchStatus, Enrolment, Session } from "@/lib/types";
 import AssignLearnerModal from "./AssignLearnerModal";
 import BatchZoomPanel from "./BatchZoomPanel";
 import BatchModal from "./BatchModal";
@@ -134,6 +136,56 @@ function LearnerRow({ enrolment: e, canWrite }: { enrolment: Enrolment; canWrite
       )}
     </div>
   );
+}
+
+/**
+ * The roster as a spreadsheet.
+ *
+ * What is on screen plus what the screen has no room for: the phone number,
+ * the enrolment code, the lesson count and the certificate. This is the list
+ * that gets worked from outside the admin — codes to send out, who to chase
+ * before a session — so it carries the columns that errand needs rather than
+ * only the ones the table shows.
+ *
+ * Cancelled seats are included and marked. Leaving them out of a file called
+ * "roster" is how someone concludes a delegate was never enrolled.
+ */
+function exportRoster(data: AdminData, batch: { id: string; name: string; courseId: string }, people: Enrolment[]) {
+  const course = data.courses.find((c) => c.id === batch.courseId);
+  const modules = (course?.modules ?? []).filter((m) => m.itemIds?.length);
+  const total = modules.reduce((a, m) => a + (m.itemIds?.length ?? 0), 0);
+
+  const rows = [
+    ["Name", "Email", "Phone", "Enrolment code", "Status", "Amount (₹)", "Signed up", "Lessons done", "Assessment", "Certificate"],
+    ...people.map((e) => {
+      const done = new Set(progressFor(data, e)?.completedItems ?? []);
+      const finished = modules.reduce((a, m) => a + (m.itemIds ?? []).filter((id) => done.has(id)).length, 0);
+      const sat = assessmentFor(data, e);
+      const cert = certificateFor(data, e.id);
+      return [
+        e.name,
+        e.email,
+        e.phone,
+        e.claimCode,
+        e.status === "paid" ? "Paid" : e.status === "cancelled" ? "Cancelled" : "Payment pending",
+        (e.amountPaise / 100).toFixed(2),
+        e.userId ? "Yes" : "No",
+        // Blank rather than "0 of 19" for someone with no account: they have
+        // not failed to do the lessons, they cannot reach them yet.
+        e.userId && total > 0 ? `${finished} of ${total}` : "",
+        sat ? `${sat.bestScore} of ${sat.total}${sat.everPassed ? "" : " (not passed)"}` : "",
+        cert ? (cert.revokedAt ? `${cert.certNo} (revoked)` : cert.certNo) : "",
+      ];
+    }),
+  ];
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const stem = `${course?.short || course?.title || "course"} ${batch.name} roster ${stamp}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  downloadXlsx(rows, stem, batch.name, [26, 34, 18, 16, 16, 13, 11, 14, 18, 18]);
 }
 
 /**
@@ -389,9 +441,14 @@ export default function BatchDetailView() {
                 the money is — amounts, payment links, share and CSV — so it
                 opens already filtered to this batch. */}
             {people.length > 0 && (
-              <Link href={`/enrolments/?batch=${batch.id}`} className="btn btn-soft" style={{ display: "inline-block" }}>
-                Open in Enrolments
-              </Link>
+              <>
+                <button type="button" className="btn btn-soft" onClick={() => exportRoster(data, batch, people)}>
+                  Download Excel
+                </button>
+                <Link href={`/enrolments/?batch=${batch.id}`} className="btn btn-soft" style={{ display: "inline-block" }}>
+                  Open in Enrolments
+                </Link>
+              </>
             )}
             {canWrite && !finished && (
               <>
