@@ -6,6 +6,7 @@ import {
   DEFAULT_CERTIFICATE_TITLE,
   EXCELLENCE_BLANK_PLATE,
   LOCAL_PLATES,
+  PLATE_PRINTED_TITLE,
   downloadBlob,
   fileStem,
   plateExists,
@@ -84,8 +85,12 @@ export default function CertificatesView() {
   // A title the artwork does not print needs the plate that carries no
   // heading, because the printed one cannot be covered without cutting through
   // the swirl behind it.
+  // Compared against what the artwork prints, not against the default: the
+  // default is now "Certificate of Achievement", which the artwork does not
+  // print, so the ordinary case is the drawn one.
   const customTitle =
-    issue.template === "excellence" && issue.title.trim() !== DEFAULT_CERTIFICATE_TITLE && issue.title.trim() !== "";
+    issue.template === "excellence" &&
+    (issue.title.trim() || DEFAULT_CERTIFICATE_TITLE) !== PLATE_PRINTED_TITLE;
 
   const [localPlate, setLocalPlate] = useState("");
   useEffect(() => {

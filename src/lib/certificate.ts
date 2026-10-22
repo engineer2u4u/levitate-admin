@@ -205,8 +205,26 @@ export const LOCAL_PLATES = {
  */
 export const EXCELLENCE_BLANK_PLATE = withBase("/certificates/excellence-blank.jpg");
 
-/** What the Award of Excellence artwork prints when nothing else is asked for. */
-export const DEFAULT_CERTIFICATE_TITLE = "Certificate of Training Completion";
+/**
+ * The heading every certificate carries unless one is typed over it.
+ *
+ * "Certificate of Achievement" rather than the "Certificate of Training
+ * Completion" the artwork itself prints — which is why the blank plate exists
+ * and why this default now always means drawing the heading rather than
+ * leaving it to the plate. The website's issued certificates say the same, so
+ * what the office prints and what a learner downloads are the same document.
+ */
+export const DEFAULT_CERTIFICATE_TITLE = "Certificate of Achievement";
+
+/**
+ * The heading printed on the Award of Excellence artwork itself.
+ *
+ * Not a default — a fact about the image. The full plate is only usable when
+ * the certificate is meant to say exactly this; anything else needs the blank
+ * one with the heading drawn over it. Keeping the two apart is what stopped
+ * the new default quietly printing the old wording.
+ */
+export const PLATE_PRINTED_TITLE = "Certificate of Training Completion";
 
 /** Resolves once per URL — a missing file is a 404, not an exception. */
 const probes = new Map<string, Promise<boolean>>();
