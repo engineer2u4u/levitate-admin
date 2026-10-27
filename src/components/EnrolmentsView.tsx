@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { inr } from "@/lib/format";
 import {
+  assessmentFor,
   certificateFor,
   clearLegacyEnrolments,
   issueCertificate,
@@ -17,7 +18,8 @@ import {
   type LearnerAccount,
 } from "@/lib/store";
 import { useAdminData, useCatalogStatus } from "@/lib/useStore";
-import type { Enrolment, LegacyEnrolment } from "@/lib/types";
+import { downloadXlsx } from "@/lib/xlsx";
+import type { AdminData, Enrolment, LegacyEnrolment } from "@/lib/types";
 import CatalogState from "./CatalogState";
 import EnrolmentShare from "./EnrolmentShare";
 import { EmptyState, Pager, Pill, card, input, th } from "./ui";
@@ -83,6 +85,79 @@ function downloadLegacy(rows: LegacyEnrolment[], courseTitle: (id: string) => st
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/**
+ * The enrolments on screen, as a spreadsheet.
+ *
+ * Carries what the table shows plus what it has no room for — phone, enrolment
+ * code, lesson count, assessment, certificate — because this is the file the
+ * office actually works from: codes to send, seats to chase, a cohort to hand
+ * to a facilitator. The filename records which filters produced it, so two
+ * exports in a downloads folder are tellable apart.
+ */
+function exportEnrolments(
+  data: AdminData,
+  rows: Enrolment[],
+  by: { filter: string; account: string; courseId: string; batchId: string; query: string },
+) {
+  const out = [
+    ["Name", "Email", "Phone", "Course", "Batch", "Enrolment code", "Status", "Amount (₹)", "Source", "Signed up", "Lessons done", "Assessment", "Certificate", "Enrolled on"],
+    ...rows.map((e) => {
+      const course = data.courses.find((c) => c.id === e.courseId);
+      const batch = data.batches.find((b) => b.id === e.batchId);
+      const modules = (course?.modules ?? []).filter((m) => m.itemIds?.length);
+      const total = modules.reduce((a, m) => a + (m.itemIds?.length ?? 0), 0);
+      const done = new Set(progressFor(data, e)?.completedItems ?? []);
+      const finished = modules.reduce((a, m) => a + (m.itemIds ?? []).filter((id) => done.has(id)).length, 0);
+      const sat = assessmentFor(data, e);
+      const cert = certificateFor(data, e.id);
+      return [
+        e.name,
+        e.email,
+        e.phone,
+        course?.short || course?.title || "",
+        batch?.name ?? "",
+        e.claimCode,
+        e.status === "paid" ? "Paid" : e.status === "cancelled" ? "Cancelled" : "Payment pending",
+        (e.amountPaise / 100).toFixed(2),
+        e.source === "Website" ? "Bought online" : "Added here",
+        e.userId ? "Yes" : "No",
+        // Blank, not "0 of 19", for someone with no account: they have not
+        // failed to do the lessons, they cannot reach them yet.
+        e.userId && total > 0 ? `${finished} of ${total}` : "",
+        sat ? `${sat.bestScore} of ${sat.total}${sat.everPassed ? "" : " (not passed)"}` : "",
+        cert ? (cert.revokedAt ? `${cert.certNo} (revoked)` : cert.certNo) : "",
+        day(e.createdAt),
+      ];
+    }),
+  ];
+
+  const course = data.courses.find((c) => c.id === by.courseId);
+  const batch = data.batches.find((b) => b.id === by.batchId);
+  const parts = [
+    "enrolments",
+    by.filter !== "All" ? by.filter : "",
+    by.account !== "Everyone" ? by.account : "",
+    course?.short || course?.title || "",
+    batch?.name ?? "",
+    by.query.trim(),
+    new Date().toISOString().slice(0, 10),
+  ].filter(Boolean);
+
+  downloadXlsx(out, stem(parts.join(" ")), "Enrolments", [24, 32, 17, 20, 16, 15, 16, 12, 13, 10, 13, 18, 18, 14]);
+}
+
+/** The accounts holding no seat, which is a different list and different columns. */
+function exportAccounts(accounts: LearnerAccount[]) {
+  const out = [
+    ["Name", "Email", "Organisation", "Signed up"],
+    ...accounts.map((a) => [a.name, a.email, a.org, day(a.joinedAt)]),
+  ];
+  downloadXlsx(out, stem(`lms accounts with no enrolment ${new Date().toISOString().slice(0, 10)}`), "No enrolment", [26, 34, 26, 14]);
+}
+
+const stem = (text: string) =>
+  text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 export default function EnrolmentsView() {
   const data = useAdminData();
@@ -289,6 +364,21 @@ export default function EnrolmentsView() {
                   );
                 })}
               </div>
+              {/* Downloads what the filters have left, not the whole table:
+                  the list on screen is the one somebody wants to work from. */}
+              {(showingAccounts ? unenrolled.length : rows.length) > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-soft"
+                  onClick={() =>
+                    showingAccounts
+                      ? exportAccounts(unenrolled)
+                      : exportEnrolments(data, rows, { filter, account, courseId, batchId, query })
+                  }
+                >
+                  Download Excel
+                </button>
+              )}
               {canWrite && <button type="button" className="btn btn-dark" onClick={() => openEnrol()}>+ Enrol someone</button>}
             </div>
           </div>
