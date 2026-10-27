@@ -27,6 +27,7 @@ import type { AdminData, BatchStatus, Enrolment, Session } from "@/lib/types";
 import AssignLearnerModal from "./AssignLearnerModal";
 import BatchZoomPanel from "./BatchZoomPanel";
 import BatchModal from "./BatchModal";
+import CompleteBatchModal from "./CompleteBatchModal";
 import ModuleUnlockPanel from "./ModuleUnlockPanel";
 import { batchTone, dateRange } from "./BatchesView";
 import CatalogState from "./CatalogState";
@@ -41,6 +42,9 @@ const LABEL: Record<BatchStatus, string> = { upcoming: "Upcoming", running: "Run
 
 const textButton = (color: string) =>
   ({ cursor: "pointer", border: "none", background: "none", padding: 0, font: "700 10.5px 'Plus Jakarta Sans',sans-serif", color }) as const;
+
+const day = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
 const LEARNER_GRID = "minmax(0,1.8fr) minmax(0,.7fr) minmax(0,1fr) minmax(0,1.5fr)";
 
@@ -252,6 +256,7 @@ export default function BatchDetailView() {
 
   const [editing, setEditing] = useState(false);
   const [sessionModal, setSessionModal] = useState<Session | "new" | null>(null);
+  const [completing, setCompleting] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -275,6 +280,10 @@ export default function BatchDetailView() {
 
   const course = data.courses.find((c) => c.id === batch.courseId);
   const sessions = sessionsOf(data, batch.id);
+  // The last session's date, offered as the completion date — it is the right
+  // answer most of the time, and wrong in a way that is obvious on sight.
+  const lastSessionOn =
+    sessions.map((s) => s.startsOn).filter((d): d is string => Boolean(d)).sort().at(-1) ?? null;
   const people = data.enrolments.filter((e) => e.batchId === batch.id);
   const active = activeEnrolments(data, batch.id);
   const taken = batchTaken(data, batch.id);
@@ -287,6 +296,16 @@ export default function BatchDetailView() {
     const res = await updateBatch(batch.id, { status: next });
     setBusy(false);
     toast(res.ok ? `${batch.name} marked ${LABEL[next].toLowerCase()}` : res.error);
+  };
+
+  /** Completing goes through the dialog, because it needs a date. */
+  const complete = async (completedOn: string) => {
+    setBusy(true);
+    const res = await updateBatch(batch.id, { status: "completed", completedOn });
+    setBusy(false);
+    if (!res.ok) return toast(res.error);
+    setCompleting(false);
+    toast(`${batch.name} completed — certificates are dated ${day(completedOn)}`);
   };
 
   const onDelete = async () => {
@@ -313,7 +332,11 @@ export default function BatchDetailView() {
           </div>
           <div style={{ font: "500 11.5px 'Plus Jakarta Sans',sans-serif", color: "var(--muted)", marginTop: 5 }}>
             {dateRange(from, to)} · {taken}/{batch.seats} seats · {active.filter((e) => e.status === "paid").length} paid
-            {batch.completedAt ? ` · ${LABEL[batch.status].toLowerCase()} ${new Date(batch.completedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}` : ""}
+            {batch.completedOn
+              ? ` · ${LABEL[batch.status].toLowerCase()} ${day(batch.completedOn)}`
+              : batch.completedAt
+                ? ` · ${LABEL[batch.status].toLowerCase()} ${day(batch.completedAt)}`
+                : ""}
           </div>
         </div>
 
@@ -327,7 +350,7 @@ export default function BatchDetailView() {
                 type="button"
                 className="btn btn-dark"
                 disabled={busy}
-                onClick={() => void setStatus("completed", `Mark ${batch.name} completed? Its sessions close, and it moves to the Completed history.`)}
+                onClick={() => setCompleting(true)}
               >
                 Mark completed
               </button>
@@ -471,6 +494,15 @@ export default function BatchDetailView() {
       </div>
 
       {editing && <BatchModal batch={batch} onClose={() => setEditing(false)} />}
+      {completing && (
+        <CompleteBatchModal
+          batch={batch}
+          lastSessionOn={lastSessionOn}
+          busy={busy}
+          onClose={() => setCompleting(false)}
+          onConfirm={(on) => void complete(on)}
+        />
+      )}
       {assigning && <AssignLearnerModal batch={batch} onClose={() => setAssigning(false)} />}
       {sessionModal && (
         <SessionModal session={sessionModal === "new" ? undefined : sessionModal} batchId={batch.id} onClose={() => setSessionModal(null)} />

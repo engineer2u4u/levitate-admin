@@ -128,6 +128,7 @@ export type BatchDbRow = {
   starts_on: string | null; ends_on: string | null;
   status: Batch["status"]; enrolment_open: boolean; seats: number; price_paise: number;
   hours_label: string; pdcs: string; cpd_hours: string;
+  completed_on: string | null;
   completed_at: string | null; created_at: string; updated_at: string;
 };
 
@@ -369,6 +370,7 @@ export function batchFromRow(r: BatchDbRow): Batch {
     pdcs: r.pdcs ?? "",
     cpdHours: r.cpd_hours ?? "",
     completedAt: r.completed_at ?? null,
+    completedOn: r.completed_on ?? null,
     createdAt: r.created_at,
   };
 }
@@ -387,6 +389,8 @@ export function batchToRow(b: BatchInput): BatchWrite {
     hours_label: b.hoursLabel,
     pdcs: b.pdcs,
     cpd_hours: b.cpdHours,
+    // Empty string from a cleared date field means "no date", not 1970.
+    completed_on: b.completedOn || null,
   };
 }
 

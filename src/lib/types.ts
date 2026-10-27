@@ -321,6 +321,15 @@ export type Batch = {
   /** CPD points or hours this run carries. Blank where it carries none. */
   cpdHours: string;
   completedAt: string | null;
+  /**
+   * The day this run concluded, as the office states it — "2026-10-25".
+   *
+   * Supplied when the batch is marked complete, and printed on every
+   * certificate issued out of it. Separate from `completedAt`, which records
+   * when somebody pressed the button: a programme that ended on Sunday can be
+   * closed in the office on Tuesday, and Sunday is what belongs on the plate.
+   */
+  completedOn: string | null;
   createdAt: string;
 };
 

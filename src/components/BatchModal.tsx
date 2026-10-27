@@ -42,6 +42,9 @@ export default function BatchModal({ batch, courseId, onClose }: Props) {
   // What this run puts on a certificate. Blank where it earns none, which is
   // better on the plate than a dash.
   const [hoursLabel, setHoursLabel] = useState(batch?.hoursLabel ?? "");
+  // Only editable once the run is closed — before that there is nothing to
+  // state, and the date is asked for when it is marked complete.
+  const [completedOn, setCompletedOn] = useState(batch?.completedOn ?? "");
   const [pdcs, setPdcs] = useState(batch?.pdcs ?? "");
   const [cpdHours, setCpdHours] = useState(batch?.cpdHours ?? "");
   const [enrolmentOpen, setEnrolmentOpen] = useState(batch?.enrolmentOpen ?? true);
@@ -109,6 +112,7 @@ export default function BatchModal({ batch, courseId, onClose }: Props) {
       hoursLabel: hoursLabel.trim(),
       pdcs: pdcs.trim(),
       cpdHours: cpdHours.trim(),
+      completedOn: completedOn || null,
     };
 
     setSaving(true);
@@ -171,6 +175,16 @@ export default function BatchModal({ batch, courseId, onClose }: Props) {
           <Field label="SHRM PDCs" hint="Blank if none.">
             <input value={pdcs} onChange={(e) => setPdcs(e.target.value)} placeholder="12" style={input} />
           </Field>
+          {/* Shown only on a closed run: this is the date its certificates
+              carry, and it is set when the batch is marked complete. Here so a
+              wrong one can be corrected without reopening the batch — though
+              certificates already issued keep the date they were issued with,
+              which is the point of snapshotting them. */}
+          {batch?.status === "completed" && (
+            <Field label="Completed on" hint="What its certificates are dated.">
+              <input type="date" value={completedOn} onChange={(e) => setCompletedOn(e.target.value)} style={input} />
+            </Field>
+          )}
           <Field label="CPD points" hint="Blank if none.">
             <input value={cpdHours} onChange={(e) => setCpdHours(e.target.value)} placeholder="12" style={input} />
           </Field>
