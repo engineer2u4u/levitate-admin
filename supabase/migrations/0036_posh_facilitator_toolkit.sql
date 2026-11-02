@@ -122,7 +122,11 @@ select u.email,
           left join public.batches b on b.id = e.batch_id
          where e.user_id = cp.user_id
            and c2.slug = 'posh-trainer'
-         order by e.paid desc
+           and e.status <> 'cancelled'
+         -- The seat that counts, where somebody is repeating the course:
+         -- paid before pending, then the most recent. `status`, not a `paid`
+         -- boolean — 0001 had one and a later migration replaced it.
+         order by (e.status = 'paid') desc, e.created_at desc
          limit 1)                as batch,
        cardinality(r.items)      as required,
        owed.items                as waiting_on,
