@@ -182,6 +182,8 @@ export type EnrolmentRow = {
   paid_at: string | null; cancelled_at: string | null; linked_at: string | null;
   completed_at: string | null; certificate_sent_at: string | null; toolkit_sent_at: string | null;
   notes: string; created_at: string;
+  /** Absent until migration 0037 has run. */
+  on_hold?: boolean | null; hold_note?: string | null; held_at?: string | null;
 };
 
 /** What the admin writes: every column but the ones the database owns. The
@@ -455,6 +457,11 @@ export function enrolmentFromRow(r: EnrolmentRow): Enrolment {
     toolkitSentAt: r.toolkit_sent_at ?? null,
     notes: r.notes ?? "",
     createdAt: r.created_at,
+    // Absent until migration 0037 has run, and "not on hold" is the right
+    // reading of a column that is not there yet.
+    onHold: r.on_hold ?? false,
+    holdNote: r.hold_note ?? "",
+    heldAt: r.held_at ?? null,
   };
 }
 

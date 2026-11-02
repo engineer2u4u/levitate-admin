@@ -782,6 +782,10 @@ export async function createEnrolment(input: EnrolmentInput): Promise<{ ok: true
     completedAt: null,
     certificateSentAt: null,
     toolkitSentAt: null,
+    // A new seat is never born on hold; it is put there afterwards, if at all.
+    onHold: false,
+    holdNote: "",
+    heldAt: null,
     createdAt: new Date().toISOString(),
   };
   setCatalog({ enrolments: [enrolment, ...catalog.enrolments] });
@@ -818,6 +822,47 @@ export async function updateEnrolment(enrolmentId: string, patch: Partial<Enrolm
 /** Paid, back to pending, or cancelled. The database stamps when and by whom. */
 export const setEnrolmentStatus = (enrolmentId: string, next: EnrolmentStatus) =>
   updateEnrolment(enrolmentId, { status: next });
+
+/**
+ * Pause or resume a delegate's course.
+ *
+ * Its own write rather than `updateEnrolment`, because `enrolmentToRow` maps
+ * only the columns the enrolment form owns — a hold passed through there would
+ * be dropped on the floor without an error.
+ *
+ * A hold leaves the seat paid and the progress intact. What it stops is the
+ * learner adding to that progress, sitting the assessment, seeing the session
+ * details, and being issued a certificate; the database enforces all four, so
+ * this is a flag rather than a trust exercise. Resuming clears the note with
+ * it: a reason hanging off an active enrolment reads as a current problem.
+ */
+export async function setEnrolmentHold(enrolmentId: string, onHold: boolean, note = ""): Promise<SaveResult> {
+  const before = catalog.enrolments.find((e) => e.id === enrolmentId);
+  if (!before) return { ok: false, error: "That enrolment no longer exists. Reload the page." };
+
+  const heldAt = onHold ? new Date().toISOString() : null;
+  const after: Enrolment = { ...before, onHold, holdNote: onHold ? note.trim() : "", heldAt };
+  put("enrolments", after);
+
+  const res = await run<EnrolmentRow>((db) =>
+    db.from("enrolments")
+      .update({ on_hold: onHold, hold_note: after.holdNote, held_at: heldAt })
+      .eq("id", enrolmentId)
+      .select()
+      .maybeSingle(),
+  );
+  if (!res.ok) {
+    if (catalog.enrolments.find((e) => e.id === enrolmentId) === after) put("enrolments", before);
+    // The columns arrive with migration 0037. Until it has run this fails on
+    // the column rather than on permissions, and saying which is the
+    // difference between a one-minute fix and a bug hunt.
+    return /on_hold|hold_note|held_at|column/i.test(res.error)
+      ? { ok: false, error: "Holds need migration 0037. Run it, then try again." }
+      : res;
+  }
+  put("enrolments", enrolmentFromRow(res.data));
+  return { ok: true };
+}
 
 /* ----------------------- assigning accounts by hand ------------------ */
 

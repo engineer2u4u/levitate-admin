@@ -160,7 +160,7 @@ function exportRoster(data: AdminData, batch: { id: string; name: string; course
   const total = modules.reduce((a, m) => a + (m.itemIds?.length ?? 0), 0);
 
   const rows = [
-    ["Name", "Email", "Phone", "Enrolment code", "Status", "Amount (₹)", "Signed up", "Lessons done", "Assessment", "Certificate"],
+    ["Name", "Email", "Phone", "Enrolment code", "Status", "On hold", "Amount (₹)", "Signed up", "Lessons done", "Assessment", "Certificate"],
     ...people.map((e) => {
       const done = new Set(progressFor(data, e)?.completedItems ?? []);
       const finished = modules.reduce((a, m) => a + (m.itemIds ?? []).filter((id) => done.has(id)).length, 0);
@@ -172,6 +172,9 @@ function exportRoster(data: AdminData, batch: { id: string; name: string; course
         e.phone,
         e.claimCode,
         e.status === "paid" ? "Paid" : e.status === "cancelled" ? "Cancelled" : "Payment pending",
+        // Blank rather than "No": a filter on this column then picks out the
+        // held seats without reading every row. The reason stays in the admin.
+        e.onHold ? "On hold" : "",
         (e.amountPaise / 100).toFixed(2),
         e.userId ? "Yes" : "No",
         // Blank rather than "0 of 19" for someone with no account: they have

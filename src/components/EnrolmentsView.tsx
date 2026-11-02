@@ -13,6 +13,7 @@ import {
   progressFor,
   readLegacyEnrolments,
   resetProgress,
+  setEnrolmentHold,
   setEnrolmentStatus,
   unassignLearner,
   type LearnerAccount,
@@ -55,12 +56,29 @@ const ACCOUNT_HINT: Record<AccountFilter, string> = {
   "No enrolment": "Accounts that signed up on the website and hold no seat",
 };
 
-export const statusPill = (e: Enrolment) =>
+const paymentPill = (e: Enrolment) =>
   e.status === "paid"
     ? <Pill tone="good">Paid</Pill>
     : e.status === "cancelled"
       ? <Pill tone="neutral">Cancelled</Pill>
       : <Pill tone="warn">Payment pending</Pill>;
+
+/**
+ * What state this seat is in.
+ *
+ * A hold shows alongside the payment pill rather than replacing it: a held
+ * delegate is still a paid one, and the office needs both answers at a glance
+ * — "paid, on hold" and "pending, on hold" are different conversations.
+ */
+export const statusPill = (e: Enrolment) =>
+  e.onHold ? (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      {paymentPill(e)}
+      <Pill tone="bad">On hold</Pill>
+    </span>
+  ) : (
+    paymentPill(e)
+  );
 
 /** A CSV cell, quoted, and defused so a name like "=HYPERLINK(…)" stays text. */
 function cell(v: string | number | boolean): string {
@@ -101,7 +119,7 @@ function exportEnrolments(
   by: { filter: string; account: string; courseId: string; batchId: string; query: string },
 ) {
   const out = [
-    ["Name", "Email", "Phone", "Course", "Batch", "Enrolment code", "Status", "Amount (₹)", "Source", "Signed up", "Lessons done", "Assessment", "Certificate", "Enrolled on"],
+    ["Name", "Email", "Phone", "Course", "Batch", "Enrolment code", "Status", "On hold", "Hold reason", "Amount (₹)", "Source", "Signed up", "Lessons done", "Assessment", "Certificate", "Enrolled on"],
     ...rows.map((e) => {
       const course = data.courses.find((c) => c.id === e.courseId);
       const batch = data.batches.find((b) => b.id === e.batchId);
@@ -119,6 +137,10 @@ function exportEnrolments(
         batch?.name ?? "",
         e.claimCode,
         e.status === "paid" ? "Paid" : e.status === "cancelled" ? "Cancelled" : "Payment pending",
+        // Blank rather than "No", so a filter on this column picks out the
+        // held seats without the eye having to read every row.
+        e.onHold ? "On hold" : "",
+        e.onHold ? e.holdNote : "",
         (e.amountPaise / 100).toFixed(2),
         e.source === "Website" ? "Bought online" : "Added here",
         e.userId ? "Yes" : "No",
@@ -264,6 +286,29 @@ export default function EnrolmentsView() {
     const res = await setEnrolmentStatus(e.id, next);
     setBusy(null);
     toast(res.ok ? message : res.error);
+  };
+
+  const hold = async (e: Enrolment) => {
+    if (e.onHold) {
+      if (!confirm(`Resume ${e.name}'s course? They can carry on from where they stopped.`)) return;
+      setBusy(e.id);
+      const res = await setEnrolmentHold(e.id, false);
+      setBusy(null);
+      toast(res.ok ? `${e.name} resumed` : res.error);
+      return;
+    }
+    // Asked for, not required: a hold with no reason recorded is one nobody
+    // can explain a week later. Cancelling the prompt cancels the hold, so an
+    // accidental click costs nothing.
+    const note = prompt(
+      `Put ${e.name}'s course on hold?\n\nThey keep the progress they have but cannot go further, sit the assessment, see session details or be issued a certificate. The screen tells them to call the office.\n\nWhy (for the office — the learner never sees this):`,
+      e.holdNote,
+    );
+    if (note === null) return;
+    setBusy(e.id);
+    const res = await setEnrolmentHold(e.id, true, note);
+    setBusy(null);
+    toast(res.ok ? `${e.name}'s course is on hold` : res.error);
   };
 
   const issue = async (e: Enrolment) => {
@@ -520,6 +565,14 @@ export default function EnrolmentsView() {
                         </div>
                       );
                     })()}
+                    {/* The reason, for whoever picks the phone up — this is
+                        the one place it is shown, and the learner's screen
+                        never carries it. */}
+                    {e.onHold && e.holdNote && (
+                      <div style={{ font: "600 10px/1.5 'Plus Jakarta Sans',sans-serif", color: "#9a2c2c", marginTop: 3 }}>
+                        On hold — {e.holdNote}
+                      </div>
+                    )}
                   </div>
                   {canWrite && (
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -548,6 +601,14 @@ export default function EnrolmentsView() {
                         </button>
                       ) : (
                         <button type="button" disabled={working} onClick={() => void change(e, "pending", "Enrolment restored as pending")} style={action("var(--teal)")}>Restore</button>
+                      )}
+                      {/* Not offered on a cancelled seat: there is nothing to
+                          pause, and Restore is the button that means something
+                          there. */}
+                      {e.status !== "cancelled" && (
+                        <button type="button" disabled={working} onClick={() => void hold(e)} style={action(e.onHold ? "var(--teal)" : "#b4453f")}>
+                          {e.onHold ? "Resume course" : "Hold course"}
+                        </button>
                       )}
                       {/* Carried over from the accounts screen this absorbed.
                           Issuing is offered only where the course is actually

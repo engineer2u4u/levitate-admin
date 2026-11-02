@@ -470,6 +470,18 @@ export type Enrolment = {
   toolkitSentAt: string | null;
   notes: string;
   createdAt: string;
+  /**
+   * Paused by the office.
+   *
+   * Not a `status` value, deliberately: status is the commercial record that
+   * the payment flow and the revenue figures read, and a held seat is still a
+   * paid one. The learner keeps the progress they have but cannot add to it,
+   * sit the assessment, see session details or be issued a certificate.
+   */
+  onHold: boolean;
+  /** Why, for the office. Never shown to the learner. */
+  holdNote: string;
+  heldAt: string | null;
 };
 
 /** What the enrol form supplies; the database stamps the rest. */
