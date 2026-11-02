@@ -16,6 +16,7 @@ import {
   removeBatch,
   removeSession,
   sessionsOf,
+  setEnrolmentHold,
   setEnrolmentStatus,
   unassignLearner,
   updateBatch,
@@ -60,6 +61,28 @@ function LearnerRow({ enrolment: e, canWrite }: { enrolment: Enrolment; canWrite
     toast(res.ok ? message : res.error);
   };
 
+  /** Pause or resume this delegate's course. Same prompt as the Enrolments
+   *  screen, because it is the same decision wherever it is taken. */
+  const hold = async () => {
+    if (e.onHold) {
+      if (!confirm(`Resume ${e.name}'s course? They can carry on from where they stopped.`)) return;
+      setBusy(true);
+      const res = await setEnrolmentHold(e.id, false);
+      setBusy(false);
+      toast(res.ok ? `${e.name} resumed` : res.error);
+      return;
+    }
+    const note = prompt(
+      `Put ${e.name}'s course on hold?\n\nThey keep the progress they have but cannot go further, sit the assessment, see session details or be issued a certificate. The screen tells them to call the office.\n\nWhy (for the office — the learner never sees this):`,
+      e.holdNote,
+    );
+    if (note === null) return;
+    setBusy(true);
+    const res = await setEnrolmentHold(e.id, true, note);
+    setBusy(false);
+    toast(res.ok ? `${e.name}'s course is on hold` : res.error);
+  };
+
   return (
     <div className="row-hover" style={{ display: "grid", gridTemplateColumns: LEARNER_GRID, gap: 12, padding: "11px 16px", borderBottom: "1px solid var(--surface)", alignItems: "center", opacity: e.status === "cancelled" ? 0.6 : 1 }}>
       <div style={{ minWidth: 0 }}>
@@ -97,6 +120,13 @@ function LearnerRow({ enrolment: e, canWrite }: { enrolment: Enrolment; canWrite
             "No LMS account yet"
           )}
         </div>
+        {/* The reason, for whoever picks the phone up. Shown here and on the
+            Enrolments screen only — never on the learner's own screen. */}
+        {e.onHold && e.holdNote && (
+          <div style={{ font: "600 10px/1.5 'Plus Jakarta Sans',sans-serif", color: "#9a2c2c", marginTop: 3 }}>
+            On hold — {e.holdNote}
+          </div>
+        )}
         <ModuleDots enrolment={e} />
       </div>
       {canWrite && (
@@ -110,6 +140,13 @@ function LearnerRow({ enrolment: e, canWrite }: { enrolment: Enrolment; canWrite
             <button type="button" disabled={busy} onClick={() => void change("cancelled", "Enrolment cancelled", `Cancel ${e.name}'s enrolment? Their seat is freed; the record stays.`)} style={textButton("var(--muted)")}>Cancel</button>
           ) : (
             <button type="button" disabled={busy} onClick={() => void change("pending", "Restored as pending")} style={textButton("var(--teal)")}>Restore</button>
+          )}
+          {/* Not offered on a cancelled seat: there is nothing left to pause,
+              and Restore is the button that means something there. */}
+          {e.status !== "cancelled" && (
+            <button type="button" disabled={busy} onClick={() => void hold()} style={textButton(e.onHold ? "var(--teal)" : "#b4453f")}>
+              {e.onHold ? "Resume" : "Hold"}
+            </button>
           )}
           {/* Takes the seat off the roster entirely — for a seat that was
               assigned by hand. A paid one is cancelled instead, which the

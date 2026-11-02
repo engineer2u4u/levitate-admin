@@ -607,7 +607,7 @@ export default function EnrolmentsView() {
                           there. */}
                       {e.status !== "cancelled" && (
                         <button type="button" disabled={working} onClick={() => void hold(e)} style={action(e.onHold ? "var(--teal)" : "#b4453f")}>
-                          {e.onHold ? "Resume course" : "Hold course"}
+                          {e.onHold ? "Resume" : "Hold"}
                         </button>
                       )}
                       {/* Carried over from the accounts screen this absorbed.
