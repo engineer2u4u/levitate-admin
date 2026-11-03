@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
-import { CANVASES, DEFAULT_CERTIFICATE_TITLE, MASKS, fitBlock, parseRich, richWords, runsOf, wrap, wrapRich, type MaskColors, type MaskRegion } from "@/lib/certificate";
+import { CANVASES, DEFAULT_CERTIFICATE_TITLE, MASKS, fitBlock, hoursLabel, parseRich, richWords, runsOf, wrap, wrapRich, type MaskColors, type MaskRegion } from "@/lib/certificate";
 import type { CertificateIssue, CertificateSettings } from "@/lib/types";
 
 const SERIF = "Georgia, 'Times New Roman', serif";
@@ -384,7 +384,7 @@ function Excellence({ issue, settings, plate, maskColors, plateHasTitle }: Omit<
       <text x="776" y="543" fontFamily={SANS} fontSize="15" fontWeight="700" fill="#5b6b7c" letterSpacing="2.4">COMPLETED</text>
       <text x="950" y="543" fontFamily={SANS} fontSize="19" fontWeight="800" fill={E_INK}>{issue.completedOn || "—"}</text>
       <text x="1100" y="543" fontFamily={SANS} fontSize="18" fontWeight="400" fill="#c3cfdb">|</text>
-      <text x="1124" y="543" fontFamily={SANS} fontSize="19" fontWeight="800" fill={E_TEAL}>{issue.hours || "—"}</text>
+      <text x="1124" y="543" fontFamily={SANS} fontSize="19" fontWeight="800" fill={E_TEAL}>{hoursLabel(issue.hours) || "—"}</text>
 
       {/* Sampled from the plate, so these patch correctly over the gradient. */}
       {mask && <Patch r={M.certId} fill={patch("certId")} />}

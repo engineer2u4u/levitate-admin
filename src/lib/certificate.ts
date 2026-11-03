@@ -178,6 +178,27 @@ export function suggestId(date = new Date()): string {
 export const today = () =>
   new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
+/**
+ * The hours as the plate expects to read them.
+ *
+ * A batch keeps the figure as a number to be counted with — "15" — while the
+ * plate sets it beside the completion date, where a bare number reads as part
+ * of the date rather than as a duration. A value that already names its unit
+ * is left exactly as it is.
+ *
+ * The same rule as the website's `certificateArt.ts`, and it has to stay the
+ * same: the admin previews the plate the learner downloads, and the two
+ * disagreeing is worse than either being wrong on its own. Deliberately not
+ * applied at issue time — `certificates.hours` holds what the batch said, and
+ * normalising it here means a certificate already in someone's hands gets the
+ * fix too, since the plate is drawn from the stored string every time.
+ */
+export function hoursLabel(value: string): string {
+  const v = value.trim();
+  if (!v) return "";
+  return /^\d+(\.\d+)?$/.test(v) ? `${v} ${v === "1" ? "Hour" : "Hours"}` : v;
+}
+
 /* --------------------------------- plates -------------------------------- */
 
 /**
